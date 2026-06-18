@@ -1,0 +1,25 @@
+name = "maskdb"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The masking + auth proxy. All control-plane and data-plane routes live here.
+# Bind your purchased domain in the Cloudflare dashboard (Workers > Custom Domains),
+# e.g. api.maskdb.ai -> this worker.
+
+# --- service metadata DB (Cloudflare D1 / SQLite) -------------------------
+# Create with:  wrangler d1 create maskdb
+# then paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "maskdb"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+# Max rows any single /query may return. Hard ceiling, also the default.
+MAX_LIMIT = "1000"
+
+# --- secrets (set with: wrangler secret put <NAME>) -----------------------
+# MASTER_KEY  : base64-encoded 32-byte (256-bit) key used to AES-GCM encrypt
+#               stored connection strings. Generate with:
+#               openssl rand -base64 32
