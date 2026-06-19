@@ -155,22 +155,17 @@ Set once per column on the database (`PUT /v1/databases/{db}/policy`, requires
 | `hash`   | irreversible SHA-256 (joinable) |
 | `null`   | `null`                          |
 
-## Allowlist vs allow-by-default
+## Allowlist, always
 
-Each database has a `default_deny` flag (set when you register it, **default
-`true`**):
+Masking is allowlist-only. Only columns explicitly enabled in the policy are
+readable; every other column — and every table with no enabled column — is
+hidden from introspection and rejected if queried. There is no allow-by-default
+mode, so a missing or mistyped policy row fails **closed** (the column simply
+stays hidden) rather than leaking. This is the whole masking guarantee: data is
+hidden by construction unless you opt it in.
 
-- **`default_deny: true` (allowlist)** — only columns explicitly enabled in the
-  policy are readable; every other column and table is hidden from introspection
-  and rejected if queried. Forgetting to mask a column fails *closed*. Use this
-  for any real/production database.
-- **`default_deny: false`** — a column with no policy row is visible and
-  unmasked. Only safe for an already-masked source (e.g. a static-masked
-  replica) where masking is defence-in-depth.
-
-Every query also runs inside a Postgres `READ ONLY` transaction, so a write can
-never reach the database even if the query compiler had a bug — on top of using
-a read-only DB role.
+Queries are also SELECT-only by construction (the structured DSL can't express a
+write). Use a read-only DB role as the ground truth.
 
 ## Stack
 

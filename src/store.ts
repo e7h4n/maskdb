@@ -12,7 +12,6 @@ export interface DatabaseRow {
   account_id: string;
   name: string;
   conn_enc: string;
-  default_deny: number; // 1 = allowlist (only enabled columns are readable)
 }
 
 // A resolved token: scopes/databases JSON-parsed into arrays.
@@ -62,7 +61,7 @@ export async function databaseById(
   dbId: string,
 ): Promise<DatabaseRow | null> {
   return env.DB.prepare(
-    "SELECT id, account_id, name, conn_enc, default_deny FROM databases WHERE id = ? AND account_id = ?",
+    "SELECT id, account_id, name, conn_enc FROM databases WHERE id = ? AND account_id = ?",
   )
     .bind(dbId, accountId)
     .first<DatabaseRow>();
@@ -81,7 +80,6 @@ export interface ResolvedPolicy {
 export async function loadPolicy(
   env: Env,
   dbId: string,
-  defaultDeny: boolean,
 ): Promise<ResolvedPolicy> {
   const { results } = await env.DB.prepare(
     "SELECT table_name, column_name, enabled, mask FROM column_policies WHERE database_id = ?",
@@ -102,9 +100,9 @@ export async function loadPolicy(
     if (enabled) enabledTables.add(r.table_name);
   }
 
-  const fallback: ColPolicy = defaultDeny
-    ? { enabled: false, mask: "none" }
-    : { enabled: true, mask: "none" };
+  // Allowlist, always: a column with no policy row is hidden. There is no
+  // allow-by-default mode — a missing/mistyped policy row fails closed.
+  const fallback: ColPolicy = { enabled: false, mask: "none" };
 
   return {
     policyFor: (table, col) => map.get(`${table} ${col}`) ?? fallback,

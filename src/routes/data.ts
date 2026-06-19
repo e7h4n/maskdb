@@ -28,12 +28,9 @@ data.get("/databases/:db/tables", requireScope("db:metadata"), async (c) => {
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
   try {
     const all = await listTables(sql);
-    if (db.default_deny === 1) {
-      // Allowlist: only surface tables that have at least one enabled column.
-      const { enabledTables } = await loadPolicy(c.env, db.id, true);
-      return c.json({ tables: all.filter((t) => enabledTables.has(t)) });
-    }
-    return c.json({ tables: all });
+    // Allowlist: only surface tables that have at least one enabled column.
+    const { enabledTables } = await loadPolicy(c.env, db.id);
+    return c.json({ tables: all.filter((t) => enabledTables.has(t)) });
   } finally {
     await sql.end();
   }
@@ -43,7 +40,11 @@ data.get("/databases/:db/tables", requireScope("db:metadata"), async (c) => {
 data.get("/databases/:db/tables/:t/schema", requireScope("db:metadata"), async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const table = c.req.param("t");
-  const { policyFor } = await loadPolicy(c.env, db.id, db.default_deny === 1);
+  const { policyFor, enabledTables } = await loadPolicy(c.env, db.id);
+  // Allowlist: a table with no enabled column is not exposed at all.
+  if (!enabledTables.has(table)) {
+    throw new HTTPException(404, { message: "table not found" });
+  }
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
   try {
     const cols = await describeTable(sql, table);
@@ -89,14 +90,19 @@ data.get("/databases/:db/tables/:t/indexes", requireScope("db:metadata"), async 
 data.post("/databases/:db/query", requireScope("db:query"), async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const body = QueryBody.parse(await c.req.json());
-  const { policyFor } = await loadPolicy(c.env, db.id, db.default_deny === 1);
+  const { policyFor, enabledTables } = await loadPolicy(c.env, db.id);
+  // Allowlist gate (same set as /tables): a non-allowlisted table is "not
+  // found" — no schema enumeration oracle, checked before we touch the DB.
+  if (!enabledTables.has(body.table)) {
+    throw new HTTPException(404, { message: "table not found" });
+  }
   const maxLimit = parseInt(c.env.MAX_LIMIT || "1000", 10);
 
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
   try {
     const cols = await describeTable(sql, body.table);
     if (cols.length === 0) {
-      throw new HTTPException(400, { message: `unknown table: ${body.table}` });
+      throw new HTTPException(404, { message: "table not found" });
     }
     const validColumns = new Set(cols.map((c) => c.name));
 

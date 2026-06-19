@@ -38,10 +38,10 @@ control.post("/databases", requireScope("db:manage"), async (c) => {
   const probe = connect(body.connection_string);
   try {
     await probe`SELECT 1`;
-  } catch (e) {
-    throw new HTTPException(400, {
-      message: `could not connect: ${(e as Error).message}`,
-    });
+  } catch {
+    // Do not reflect the upstream error — it would be an internal-network
+    // probe oracle (registration is open). Generic message only.
+    throw new HTTPException(400, { message: "could not connect" });
   } finally {
     await probe.end();
   }
@@ -49,17 +49,16 @@ control.post("/databases", requireScope("db:manage"), async (c) => {
   const id = crypto.randomUUID();
   const conn_enc = await encryptSecret(c.env.MASTER_KEY, body.connection_string);
   await c.env.DB.prepare(
-    "INSERT INTO databases (id, account_id, name, conn_enc, created_at, default_deny) VALUES (?,?,?,?,?,?)",
+    "INSERT INTO databases (id, account_id, name, conn_enc, created_at) VALUES (?,?,?,?,?)",
   )
-    .bind(id, accountId, body.name, conn_enc, nowIso(), body.default_deny ? 1 : 0)
+    .bind(id, accountId, body.name, conn_enc, nowIso())
     .run();
 
   await audit(c.env, accountId, principal.tokenId, "db.add", {
     db_id: id,
     name: body.name,
-    default_deny: body.default_deny,
   });
-  return c.json({ db_id: id, name: body.name, default_deny: body.default_deny }, 201);
+  return c.json({ db_id: id, name: body.name }, 201);
 });
 
 // DELETE /v1/databases/:db — db:manage + hasDatabase(db).
@@ -148,7 +147,6 @@ control.get("/databases/:db/policy", requireScope("policy:read"), async (c) => {
   const rows = await listPolicyRows(c.env, dbId);
   return c.json({
     db_id: dbId,
-    default_deny: db.default_deny === 1,
     columns: rows.map((r) => ({
       table: r.table_name,
       name: r.column_name,

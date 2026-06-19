@@ -1,9 +1,15 @@
 import { z } from "zod";
 
+// Cloudflare Workers rate-limiting binding.
+export interface RateLimiter {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   DB: D1Database;
   MASTER_KEY: string; // base64 32-byte AES-GCM key (wrangler secret)
   MAX_LIMIT: string;
+  REGISTER_RL: RateLimiter; // rate-limits POST /v1/accounts
 }
 
 // The authenticated principal, resolved by the auth middleware.
@@ -58,9 +64,6 @@ export const RegisterBody = z.object({
 export const AddDatabaseBody = z.object({
   name: z.string().min(1).max(100),
   connection_string: z.string().min(1),
-  // Allowlist mode: only columns explicitly enabled in the policy are readable.
-  // Defaults to true so a raw production DB is safe to register.
-  default_deny: z.boolean().default(true),
 });
 
 export const PolicyBody = z.object({

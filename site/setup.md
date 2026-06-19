@@ -34,8 +34,8 @@ curl -sX POST https://api.maskdb.ai/v1/databases \
   -d '{"name":"prod","connection_string":"postgres://readonly:…@host/db?sslmode=require"}'
 ```
 
-Save the returned `db_id`. The database defaults to **allowlist mode**
-(`default_deny`): nothing is readable until you explicitly enable it.
+Save the returned `db_id`. Masking is **allowlist-only**: nothing is readable
+until you explicitly enable it.
 
 ## 3. Read the schema, propose a masking policy
 

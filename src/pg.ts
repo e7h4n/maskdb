@@ -10,7 +10,10 @@ export function connect(connectionString: string) {
     max: 1,
     idle_timeout: 5,
     connect_timeout: 10,
-    ssl: "require",
+    // verify-full: validate the server certificate + hostname. This link
+    // carries the decrypted connection string and raw rows, so it must not be
+    // MITM-able. ("require" would encrypt without verifying.)
+    ssl: "verify-full",
     // We never need prepared-statement caching across requests.
     prepare: false,
   });

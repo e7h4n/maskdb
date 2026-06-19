@@ -13,6 +13,13 @@ export async function applyMask(
   if (strategy === "none") return value;
   if (value === null || value === undefined) return value;
 
+  // Partial-reveal masks assume a plain string. For JSON/array columns (parsed
+  // into objects by postgres.js), stringifying could echo structure/content —
+  // so fall closed to full redaction instead.
+  if ((strategy === "email" || strategy === "phone") && typeof value !== "string") {
+    return "••••••••";
+  }
+
   const s = String(value);
   switch (strategy) {
     case "null":

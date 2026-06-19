@@ -28,6 +28,11 @@ app.get("/", (c) =>
 // Instant, no human gate (abuse-controlled at the edge). Creates the account
 // and a root token (scopes ["*"], databases ["*"]). Returns it exactly once.
 app.post("/v1/accounts", async (c) => {
+  const ip = c.req.header("cf-connecting-ip") ?? "anon";
+  const { success } = await c.env.REGISTER_RL.limit({ key: ip });
+  if (!success) {
+    return c.json({ error: "rate limited — try again shortly" }, 429);
+  }
   const body = RegisterBody.parse(await c.req.json());
   const accountId = crypto.randomUUID();
   const tokenId = crypto.randomUUID();
@@ -109,8 +114,10 @@ app.onError((err, c) => {
   if (err instanceof CompileError) {
     return c.json({ error: err.message }, 400);
   }
-  // Anything else (including upstream Postgres errors) is reported but not leaked verbatim.
-  console.error(err);
+  // Anything else (including upstream Postgres errors) is reported but not
+  // leaked verbatim. Log only name+message — the raw error object can embed the
+  // connection string, which must never reach Worker logs.
+  console.error(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
   return c.json({ error: "internal error" }, 500);
 });
 

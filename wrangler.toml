@@ -21,6 +21,15 @@ database_id = "5a4f465c-5f2f-453a-b4ae-e05f78f2e482"
 # Max rows any single /query may return. Hard ceiling, also the default.
 MAX_LIMIT = "1000"
 
+# --- abuse control: rate-limit open self-registration --------------------
+# Cloudflare-native edge rate limiter. POST /v1/accounts is unauthenticated,
+# so cap it per client IP (5 / minute).
+[[unsafe.bindings]]
+name = "REGISTER_RL"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
 # --- secrets (set with: wrangler secret put <NAME>) -----------------------
 # MASTER_KEY  : base64-encoded 32-byte (256-bit) key used to AES-GCM encrypt
 #               stored connection strings. Generate with:
