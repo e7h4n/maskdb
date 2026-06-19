@@ -6,6 +6,8 @@ import { CompileError } from "./compiler";
 import { hashToken, newToken } from "./crypto";
 import { control } from "./routes/control";
 import { data } from "./routes/data";
+import { tokens } from "./routes/tokens";
+import { hasScope } from "./scopes";
 import { audit } from "./store";
 import { type Env, RegisterBody, type Vars } from "./types";
 
@@ -23,28 +25,58 @@ app.get("/", (c) =>
 );
 
 // --- public: self-registration -------------------------------------------
-// Instant, no human gate (abuse-controlled at the edge). Returns the admin
-// token exactly once.
+// Instant, no human gate (abuse-controlled at the edge). Creates the account
+// and a root token (scopes ["*"], databases ["*"]). Returns it exactly once.
 app.post("/v1/accounts", async (c) => {
   const body = RegisterBody.parse(await c.req.json());
-  const id = crypto.randomUUID();
-  const token = newToken("mk_admin");
-  await c.env.DB.prepare(
-    "INSERT INTO accounts (id, owner_email, admin_token_hash, created_at) VALUES (?,?,?,?)",
-  )
-    .bind(id, body.owner_email, await hashToken(token), new Date().toISOString())
-    .run();
-  await audit(c.env, id, "admin", "account.create", { owner_email: body.owner_email });
-  return c.json({ account_id: id, admin_token: token, owner_email: body.owner_email }, 201);
+  const accountId = crypto.randomUUID();
+  const tokenId = crypto.randomUUID();
+  const token = newToken();
+  const now = new Date().toISOString();
+  const scopes = ["*"];
+  const databases = ["*"];
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO accounts (id, owner_email, created_at) VALUES (?,?,?)",
+    ).bind(accountId, body.owner_email, now),
+    c.env.DB.prepare(
+      "INSERT INTO tokens (id, account_id, name, token_hash, scopes, databases, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
+    ).bind(
+      tokenId,
+      accountId,
+      "root",
+      await hashToken(token),
+      JSON.stringify(scopes),
+      JSON.stringify(databases),
+      null,
+      now,
+    ),
+  ]);
+
+  await audit(c.env, accountId, tokenId, "account.create", {
+    owner_email: body.owner_email,
+  });
+  return c.json({ account_id: accountId, token, scopes, databases }, 201);
 });
 
 // --- everything below requires a token ------------------------------------
 app.use("/v1/*", authenticate);
 
-// Shared by both planes: admin sees all account DBs, agent sees scoped DBs.
+// GET /v1/databases — list databases the token can reach. Requires any db
+// scope (db:query / db:metadata / db:manage). databases ["*"] → all account
+// DBs; otherwise only the ids the token is scoped to.
 app.get("/v1/databases", async (c) => {
   const p = c.get("principal");
-  if (p.kind === "admin") {
+  const anyDbScope =
+    hasScope(p.scopes, "db:query") ||
+    hasScope(p.scopes, "db:metadata") ||
+    hasScope(p.scopes, "db:manage");
+  if (!anyDbScope) {
+    return c.json({ error: "missing scope: db:*" }, 403);
+  }
+
+  if (p.databases.includes("*")) {
     const { results } = await c.env.DB.prepare(
       "SELECT id, name, created_at FROM databases WHERE account_id = ? ORDER BY created_at",
     )
@@ -52,18 +84,18 @@ app.get("/v1/databases", async (c) => {
       .all();
     return c.json({ databases: results });
   }
-  // agent: only the databases this token is scoped to
-  if (p.dbIds.length === 0) return c.json({ databases: [] });
-  const placeholders = p.dbIds.map(() => "?").join(",");
+  if (p.databases.length === 0) return c.json({ databases: [] });
+  const placeholders = p.databases.map(() => "?").join(",");
   const { results } = await c.env.DB.prepare(
-    `SELECT id, name FROM databases WHERE account_id = ? AND id IN (${placeholders}) ORDER BY name`,
+    `SELECT id, name, created_at FROM databases WHERE account_id = ? AND id IN (${placeholders}) ORDER BY name`,
   )
-    .bind(p.accountId, ...p.dbIds)
+    .bind(p.accountId, ...p.databases)
     .all();
   return c.json({ databases: results });
 });
 
 app.route("/v1", control);
+app.route("/v1", tokens);
 app.route("/v1", data);
 
 // --- uniform error handling -----------------------------------------------

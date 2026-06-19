@@ -31,19 +31,85 @@ maskdb closes both by construction:
    agent, and **masked columns can never be used in a filter or sort**, so they
    can't be reconstructed through a boolean oracle.
 
-## Two planes, two tokens
+## One token class, granular scopes
+
+There is a single token class (prefix `mk_`). Self-registration mints a **root
+token** — `scopes: ["*"]`, `databases: ["*"]` — which can do everything. From it
+you mint **narrower child tokens**: each carries an explicit set of capability
+*scopes* and a set of *databases* it may reach. A child can never out-scope its
+parent (see [Containment](#containment)).
 
 ```
-   CONTROL PLANE (mk_admin_…)                 DATA PLANE (mk_agent_…)
-   self-register → admin token                read-only, scoped to a set of DBs
-   add DB (name, conn str)          ──mint──▶ GET  /v1/databases
-   set masking baseline per column            GET  /v1/databases/{db}/tables
-   mint / revoke agent tokens                 GET  …/tables/{t}/schema
-                                              GET  …/tables/{t}/indexes
-                                              POST …/query   (structured, no raw SQL)
+   self-register ──▶ root token   scopes:["*"]  databases:["*"]
+                          │
+                          ├─ mint ▶ admin-ish   scopes:["db:*","policy:*","token:*"]  databases:["*"]
+                          └─ mint ▶ support-bot scopes:["db:query","db:metadata"]     databases:["<db_id>"]
 ```
 
-No raw SQL is ever accepted. The data plane exposes a small structured query
+### Scopes
+
+| scope            | grants                                                  |
+| ---------------- | ------------------------------------------------------ |
+| `db:query`       | `POST /v1/databases/{db}/query`                        |
+| `db:metadata`    | list tables, table schema, indexes                     |
+| `db:manage`      | add DB, delete DB, read the **raw** (unmasked) schema  |
+| `policy:read`    | `GET  /v1/databases/{db}/policy`                       |
+| `policy:write`   | `PUT  /v1/databases/{db}/policy`                       |
+| `token:mint`     | `POST /v1/tokens`                                       |
+| `token:read`     | `GET  /v1/tokens`                                       |
+| `token:revoke`   | `DELETE /v1/tokens/{id}`                                |
+| `account:admin`  | reserved for account-level operations                  |
+
+Wildcards: `*` (everything), and category wildcards `db:*`, `policy:*`,
+`token:*`. A required scope is satisfied if the token holds it exactly, holds
+its category wildcard, or holds `*`.
+
+### Databases resource
+
+Every token also carries a `databases` array: either `["*"]` (every database in
+the account) or a list of specific database ids. Endpoints scoped to a single
+`{db}` additionally require that `{db}` be reachable by the token. Registering a
+new database (`POST /v1/databases`) is an account-level operation and requires
+`databases: ["*"]`.
+
+### Containment
+
+When minting a child token, both its `scopes` and `databases` must be a
+**subset** of the caller's:
+
+- A child scope is allowed only if the caller holds it, holds its category
+  wildcard, or holds `*`. A child may include `*` only if the caller has `*`.
+- If the caller's `databases` is `["*"]`, any child database set is allowed.
+  Otherwise the child may not use `["*"]`, and every id it lists must be one the
+  caller already holds.
+
+Minting that would broaden scope is rejected with `400`.
+
+### The /v1/tokens API
+
+```jsonc
+POST /v1/tokens
+Authorization: Bearer mk_…
+{ "name": "support-bot",
+  "scopes": ["db:query", "db:metadata"],
+  "databases": ["<db_id>"] }
+→ 201 { "token_id": "…", "token": "mk_…", "name": "support-bot",
+        "scopes": […], "databases": […] }   // secret shown once
+
+GET    /v1/tokens          → [{ id, name, scopes, databases, created_at, last_used_at }]
+DELETE /v1/tokens/{id}     → revoke (never returns the secret)
+```
+
+A failed scope check returns `403 {"error":"missing scope: <scope>"}`; a token
+reaching a database it isn't scoped to returns
+`403 {"error":"token not scoped to this database"}`; a bad or absent token
+returns `401`.
+
+> **Security note:** `policy:write` is effectively the ability to **unmask** —
+> a token that can rewrite a database's column policy can disable masking on any
+> column. Grant it as narrowly as you grant raw `db:manage`.
+
+No raw SQL is ever accepted. The query endpoint exposes a small structured query
 language; queries are compiled to parameterized SQL with every identifier
 checked against the live, allowlisted schema.
 
@@ -51,7 +117,7 @@ checked against the live, allowlisted schema.
 
 ```jsonc
 POST /v1/databases/{db}/query
-Authorization: Bearer mk_agent_…
+Authorization: Bearer mk_…
 {
   "table": "users",
   "select": ["id", "name", "email", "plan"],
@@ -77,8 +143,8 @@ Operators: `eq` `neq` `gt` `gte` `lt` `lte` `contains` `in` `is_null`.
 
 ## Masking strategies
 
-Set once per column on the database (`PUT /v1/databases/{db}/policy`), inherited
-by every agent token:
+Set once per column on the database (`PUT /v1/databases/{db}/policy`, requires
+`policy:write`), inherited by every token that can reach the database:
 
 | strategy | result                          |
 | -------- | ------------------------------- |
@@ -140,22 +206,24 @@ Bind your domain to the Worker in the Cloudflare dashboard
 ## Quick walkthrough
 
 ```sh
-# self-register → admin token (shown once)
+# self-register → root token (scopes ["*"], databases ["*"]); shown once
 curl -sX POST $API/v1/accounts -d '{"owner_email":"you@example.com"}'
 
 # add a database (connection string is validated, then encrypted)
-curl -sX POST $API/v1/databases -H "authorization: Bearer $ADMIN" \
+# requires db:manage and an account-level (databases ["*"]) token
+curl -sX POST $API/v1/databases -H "authorization: Bearer $ROOT" \
   -d '{"name":"prod","connection_string":"postgres://readonly:…@host/db"}'
 
 # inspect the raw schema, then set a masking baseline
-curl -sX PUT $API/v1/databases/$DB/policy -H "authorization: Bearer $ADMIN" \
+curl -sX PUT $API/v1/databases/$DB/policy -H "authorization: Bearer $ROOT" \
   -d '{"tables":[{"table":"users","columns":[
         {"name":"email","mask":"email"},
         {"name":"api_key","mask":"hash"}]}]}'
 
-# mint a read-only agent token scoped to that DB
-curl -sX POST $API/v1/agent-tokens -H "authorization: Bearer $ADMIN" \
-  -d '{"name":"support-bot","db_ids":["'$DB'"]}'
+# mint a read-only token scoped to that DB and to query+metadata only
+curl -sX POST $API/v1/tokens -H "authorization: Bearer $ROOT" \
+  -d '{"name":"support-bot","scopes":["db:query","db:metadata"],
+       "databases":["'$DB'"]}'
 
 # the agent queries — masked, parameterized, read-only
 curl -sX POST $API/v1/databases/$DB/query -H "authorization: Bearer $AGENT" \

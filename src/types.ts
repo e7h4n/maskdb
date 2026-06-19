@@ -7,12 +7,37 @@ export interface Env {
 }
 
 // The authenticated principal, resolved by the auth middleware.
-export type Principal =
-  | { kind: "admin"; accountId: string }
-  | { kind: "agent"; accountId: string; tokenId: string; dbIds: string[] };
+// One token class — the principal carries its scopes and reachable databases.
+export type Principal = {
+  accountId: string;
+  tokenId: string;
+  scopes: string[];
+  databases: string[];
+};
 
 // Hono context variables.
 export type Vars = { principal: Principal };
+
+// ---- scopes ---------------------------------------------------------------
+// Canonical capability scopes. Tokens store a JSON array of these strings,
+// optionally with wildcards ("*", "db:*", "policy:*", "token:*").
+export const Scope = z.enum([
+  "db:query",
+  "db:metadata",
+  "db:manage",
+  "policy:read",
+  "policy:write",
+  "token:mint",
+  "token:read",
+  "token:revoke",
+  "account:admin",
+  // wildcards
+  "*",
+  "db:*",
+  "policy:*",
+  "token:*",
+]);
+export type Scope = z.infer<typeof Scope>;
 
 // ---- mask strategies ------------------------------------------------------
 export const MaskStrategy = z.enum([
@@ -55,7 +80,8 @@ export const PolicyBody = z.object({
 
 export const MintTokenBody = z.object({
   name: z.string().min(1).max(100),
-  db_ids: z.array(z.string().min(1)).min(1),
+  scopes: z.array(Scope).min(1),
+  databases: z.array(z.string().min(1)).min(1),
 });
 
 // ---- data plane query DSL -------------------------------------------------

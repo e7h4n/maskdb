@@ -17,14 +17,15 @@ function fromB64(b64: string): Uint8Array {
   return out;
 }
 
-// A url-safe random secret, e.g. "mk_admin_<43 base64url chars>".
-export function newToken(prefix: "mk_admin" | "mk_agent"): string {
+// A url-safe random secret, e.g. "mk_<43 base64url chars>".
+// One token class — the prefix is always "mk_".
+export function newToken(): string {
   const raw = crypto.getRandomValues(new Uint8Array(32));
   const b64url = toB64(raw)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-  return `${prefix}_${b64url}`;
+  return `mk_${b64url}`;
 }
 
 // We only ever store the hash of a token, never the token itself.

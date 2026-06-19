@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { Context } from "hono";
-import { requireAgent } from "../auth";
+import { assertDb, requireScope } from "../auth";
 import { compileQuery } from "../compiler";
 import { decryptSecret } from "../crypto";
 import { applyMask } from "../mask";
@@ -13,19 +13,17 @@ type Ctx = { Bindings: Env; Variables: Vars };
 
 export const data = new Hono<Ctx>();
 
-// Resolve a database the current agent token is allowed to reach, or throw.
+// Resolve a database the current token is allowed to reach, or throw.
 async function resolveDb(c: Context<Ctx>, dbId: string) {
   const p = c.get("principal");
-  if (p.kind === "agent" && !p.dbIds.includes(dbId)) {
-    throw new HTTPException(403, { message: "token not scoped to this database" });
-  }
+  assertDb(p, dbId);
   const db = await databaseById(c.env, p.accountId, dbId);
   if (!db) throw new HTTPException(404, { message: "database not found" });
   return db;
 }
 
-// GET /v1/databases/:db/tables
-data.get("/databases/:db/tables", requireAgent, async (c) => {
+// GET /v1/databases/:db/tables — db:metadata + hasDatabase.
+data.get("/databases/:db/tables", requireScope("db:metadata"), async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
   try {
@@ -42,7 +40,7 @@ data.get("/databases/:db/tables", requireAgent, async (c) => {
 });
 
 // GET /v1/databases/:db/tables/:t/schema — enabled + masked projection.
-data.get("/databases/:db/tables/:t/schema", requireAgent, async (c) => {
+data.get("/databases/:db/tables/:t/schema", requireScope("db:metadata"), async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const table = c.req.param("t");
   const { policyFor } = await loadPolicy(c.env, db.id, db.default_deny === 1);
@@ -68,8 +66,8 @@ data.get("/databases/:db/tables/:t/schema", requireAgent, async (c) => {
   }
 });
 
-// GET /v1/databases/:db/tables/:t/indexes
-data.get("/databases/:db/tables/:t/indexes", requireAgent, async (c) => {
+// GET /v1/databases/:db/tables/:t/indexes — db:metadata + hasDatabase.
+data.get("/databases/:db/tables/:t/indexes", requireScope("db:metadata"), async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const table = c.req.param("t");
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
@@ -87,8 +85,8 @@ data.get("/databases/:db/tables/:t/indexes", requireAgent, async (c) => {
   }
 });
 
-// POST /v1/databases/:db/query — the structured read.
-data.post("/databases/:db/query", requireAgent, async (c) => {
+// POST /v1/databases/:db/query — the structured read. db:query + hasDatabase.
+data.post("/databases/:db/query", requireScope("db:query"), async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const body = QueryBody.parse(await c.req.json());
   const { policyFor } = await loadPolicy(c.env, db.id, db.default_deny === 1);
@@ -129,7 +127,7 @@ data.post("/databases/:db/query", requireAgent, async (c) => {
     }
 
     const p = c.get("principal");
-    await audit(c.env, p.accountId, p.kind === "agent" ? p.tokenId : "admin", "query", {
+    await audit(c.env, p.accountId, p.tokenId, "query", {
       db_id: db.id,
       table: body.table,
       columns: body.select.length,

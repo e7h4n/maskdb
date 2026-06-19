@@ -1,6 +1,8 @@
 import type { MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { hashToken } from "./crypto";
-import { accountByAdminHash, agentByTokenHash } from "./store";
+import { hasDatabase, hasScope } from "./scopes";
+import { tokenByHash, touchToken } from "./store";
 import type { Env, Principal, Vars } from "./types";
 
 type Ctx = { Bindings: Env; Variables: Vars };
@@ -12,51 +14,44 @@ function bearer(header: string | undefined): string | null {
 }
 
 // Resolves the principal from the bearer token and stores it on the context.
-// `mk_admin_*` -> admin plane, `mk_agent_*` -> data plane.
+// One token class (mk_): look up by hash, load scopes/databases.
 export const authenticate: MiddlewareHandler<Ctx> = async (c, next) => {
   const token = bearer(c.req.header("authorization"));
   if (!token) return c.json({ error: "missing bearer token" }, 401);
   const hash = await hashToken(token);
 
-  let principal: Principal | null = null;
-  if (token.startsWith("mk_admin_")) {
-    const acct = await accountByAdminHash(c.env, hash);
-    if (acct) principal = { kind: "admin", accountId: acct.id };
-  } else if (token.startsWith("mk_agent_")) {
-    const tok = await agentByTokenHash(c.env, hash);
-    if (tok) {
-      principal = {
-        kind: "agent",
-        accountId: tok.account_id,
-        tokenId: tok.id,
-        dbIds: JSON.parse(tok.db_ids) as string[],
-      };
-      // Best-effort last-used tracking; never block the request on it.
-      c.executionCtx.waitUntil(
-        c.env.DB.prepare(
-          "UPDATE agent_tokens SET last_used_at = ? WHERE id = ?",
-        )
-          .bind(new Date().toISOString(), tok.id)
-          .run(),
-      );
-    }
-  }
+  const tok = await tokenByHash(c.env, hash);
+  if (!tok) return c.json({ error: "invalid token" }, 401);
 
-  if (!principal) return c.json({ error: "invalid token" }, 401);
+  const principal: Principal = {
+    accountId: tok.account_id,
+    tokenId: tok.id,
+    scopes: tok.scopes,
+    databases: tok.databases,
+  };
   c.set("principal", principal);
+
+  // Best-effort last-used tracking; never block the request on it.
+  c.executionCtx.waitUntil(touchToken(c.env, tok.id));
+
   await next();
 };
 
-export const requireAdmin: MiddlewareHandler<Ctx> = async (c, next) => {
-  if (c.get("principal").kind !== "admin") {
-    return c.json({ error: "admin token required" }, 403);
-  }
-  await next();
-};
+// requireScope: 403 unless the principal's scopes satisfy `scope`.
+export function requireScope(scope: string): MiddlewareHandler<Ctx> {
+  return async (c, next) => {
+    if (!hasScope(c.get("principal").scopes, scope)) {
+      return c.json({ error: `missing scope: ${scope}` }, 403);
+    }
+    await next();
+  };
+}
 
-export const requireAgent: MiddlewareHandler<Ctx> = async (c, next) => {
-  if (c.get("principal").kind !== "agent") {
-    return c.json({ error: "agent token required" }, 403);
+// assertDb: throw 403 unless the principal's databases reach `dbId`.
+export function assertDb(principal: Principal, dbId: string): void {
+  if (!hasDatabase(principal.databases, dbId)) {
+    throw new HTTPException(403, {
+      message: "token not scoped to this database",
+    });
   }
-  await next();
-};
+}
