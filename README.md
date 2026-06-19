@@ -85,6 +85,7 @@ by every agent token:
 | `none`   | value as-is                     |
 | `redact` | `••••••••`                      |
 | `email`  | `e***@example.com`              |
+| `phone`  | last 4 digits kept: `+X (XXX) XXX-1848` |
 | `hash`   | irreversible SHA-256 (joinable) |
 | `null`   | `null`                          |
 

@@ -15,7 +15,14 @@ export type Principal =
 export type Vars = { principal: Principal };
 
 // ---- mask strategies ------------------------------------------------------
-export const MaskStrategy = z.enum(["none", "hash", "redact", "email", "null"]);
+export const MaskStrategy = z.enum([
+  "none",
+  "hash",
+  "redact",
+  "email",
+  "phone",
+  "null",
+]);
 export type MaskStrategy = z.infer<typeof MaskStrategy>;
 
 // ---- control plane request bodies -----------------------------------------

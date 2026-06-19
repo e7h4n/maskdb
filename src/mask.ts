@@ -30,6 +30,24 @@ export async function applyMask(
       const domain = s.slice(at);
       return `${first}***${domain}`;
     }
+    case "phone": {
+      // Keep the last 4 digits, mask all earlier digits with X, and preserve
+      // separators like "+", "-", "(", ")", and spaces for readability.
+      const digitCount = (s.match(/\d/g) || []).length;
+      if (digitCount <= 4) return s.replace(/\d/g, "X");
+      const toMask = digitCount - 4;
+      let masked = 0;
+      let out = "";
+      for (const ch of s) {
+        if (ch >= "0" && ch <= "9" && masked < toMask) {
+          out += "X";
+          masked++;
+        } else {
+          out += ch;
+        }
+      }
+      return out;
+    }
     default:
       return "••••••••";
   }
