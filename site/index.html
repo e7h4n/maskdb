@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>maskdb.ai — A safe, read-only REST gateway to Postgres for AI agents</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="apple-touch-icon" href="/logo.png" />
 <style>
   :root {
     --bg: #0a0c12;
@@ -51,9 +53,8 @@
   }
   nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; font-size: 17px; }
-  .brand .dot { width: 12px; height: 12px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    box-shadow: 0 0 16px rgba(91,140,255,.7); }
+  .brand img.logo { width: 28px; height: 28px; display: block;
+    filter: drop-shadow(0 0 10px rgba(91,140,255,.45)); }
   .brand .ai { color: var(--faint); font-weight: 600; }
   .navlinks { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
   .navlinks a:hover { color: var(--text); }
@@ -201,7 +202,7 @@
 
 <nav>
   <div class="wrap">
-    <div class="brand"><span class="dot"></span> maskdb<span class="ai">.ai</span></div>
+    <div class="brand"><img class="logo" src="/logo.png" alt="maskdb logo" /> maskdb<span class="ai">.ai</span></div>
     <div class="navlinks">
       <a href="#problem">Problem</a>
       <a href="#how">How it works</a>
