@@ -3,198 +3,108 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>maskdb.ai — A safe, read-only REST gateway to Postgres for AI agents</title>
+<title>maskdb.ai — Safe, masked database access for AI agents</title>
 <link rel="icon" type="image/png" href="/favicon.png" />
 <link rel="apple-touch-icon" href="/logo.png" />
 <style>
   :root {
-    --bg: #0a0c12;
-    --bg-soft: #11141d;
-    --panel: #161a26;
-    --panel-2: #1c2130;
-    --line: #262c3d;
-    --text: #e8ecf5;
-    --muted: #9aa3b8;
-    --faint: #6b7488;
-    --accent: #5b8cff;
-    --accent-2: #7c5cff;
-    --green: #46d39a;
-    --amber: #ffc24b;
-    --red: #ff6b6b;
-    --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --bg: #0a0c12; --bg-soft: #11141d; --panel: #161a26; --panel-2: #1c2130;
+    --line: #262c3d; --text: #e8ecf5; --muted: #9aa3b8; --faint: #6b7488;
+    --accent: #5b8cff; --accent-2: #7c5cff; --green: #46d39a; --red: #ff6b6b;
+    --mono: "SF Mono","JetBrains Mono","Fira Code",ui-monospace,Menlo,monospace;
+    --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans);
+    line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
   a { color: inherit; text-decoration: none; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
-
-  .bgglow {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  .bgglow { position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background:
-      radial-gradient(620px 420px at 78% -6%, rgba(124,92,255,0.22), transparent 70%),
-      radial-gradient(560px 380px at 8% 12%, rgba(91,140,255,0.18), transparent 70%);
-  }
-  main, header, footer { position: relative; z-index: 1; }
+      radial-gradient(620px 420px at 78% -6%, rgba(124,92,255,.22), transparent 70%),
+      radial-gradient(560px 380px at 8% 12%, rgba(91,140,255,.18), transparent 70%); }
+  main, header, footer, nav { position: relative; z-index: 1; }
 
-  nav {
-    position: sticky; top: 0; z-index: 50;
-    backdrop-filter: blur(12px);
-    background: rgba(10,12,18,0.7);
-    border-bottom: 1px solid var(--line);
-  }
+  nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px);
+    background: rgba(10,12,18,.7); border-bottom: 1px solid var(--line); }
   nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; font-size: 17px; }
-  .brand img.logo { width: 28px; height: 28px; display: block;
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+  .brand img { width: 28px; height: 28px; display: block;
     filter: drop-shadow(0 0 10px rgba(91,140,255,.45)); }
   .brand .ai { color: var(--faint); font-weight: 600; }
-  .navlinks { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
-  .navlinks a:hover { color: var(--text); }
-  @media (max-width: 760px){ .navlinks{ display:none; } }
+  nav .gh { font-size: 14px; color: var(--muted); border: 1px solid var(--line);
+    padding: 7px 14px; border-radius: 9px; background: var(--panel); }
+  nav .gh:hover { color: var(--text); border-color: #3a425a; }
 
-  header { padding: 96px 0 72px; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    border: 1px solid var(--line); background: var(--panel);
-    color: var(--muted); font-size: 13px; padding: 6px 14px; border-radius: 999px;
-    margin-bottom: 26px;
-  }
-  .pill .live { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
-  h1 {
-    font-size: clamp(36px, 6vw, 60px); line-height: 1.05; letter-spacing: -1.4px;
-    font-weight: 800; margin-bottom: 22px;
-  }
-  h1 .grad {
-    background: linear-gradient(110deg, #8fb1ff, #b79bff 60%, #7c5cff);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .sub { font-size: clamp(17px, 2.3vw, 20px); color: var(--muted); max-width: 680px; }
-  .cta { margin-top: 36px; display: flex; gap: 14px; flex-wrap: wrap; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 9px; padding: 12px 22px; border-radius: 11px;
-    font-weight: 600; font-size: 15px; border: 1px solid transparent; cursor: pointer;
-  }
-  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+  header { padding: 104px 0 80px; text-align: center; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); font-size: 13px; padding: 6px 14px;
+    border-radius: 999px; margin-bottom: 28px; }
+  .pill .live { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 10px var(--green); }
+  h1 { font-size: clamp(38px, 6.4vw, 62px); line-height: 1.04; letter-spacing: -1.6px;
+    font-weight: 800; margin-bottom: 22px; }
+  h1 .grad { background: linear-gradient(110deg,#8fb1ff,#b79bff 60%,#7c5cff);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { font-size: clamp(17px, 2.3vw, 21px); color: var(--muted); max-width: 660px; margin: 0 auto; }
+  .cta { margin-top: 38px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 9px; padding: 13px 24px; border-radius: 11px;
+    font-weight: 600; font-size: 15px; border: 1px solid transparent; cursor: pointer; }
+  .btn.primary { background: linear-gradient(135deg,var(--accent),var(--accent-2)); color: #fff;
     box-shadow: 0 8px 30px rgba(91,140,255,.32); }
   .btn.primary:hover { transform: translateY(-1px); }
   .btn.ghost { border-color: var(--line); color: var(--text); background: var(--panel); }
   .btn.ghost:hover { border-color: #3a425a; }
+  .badges { margin-top: 44px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .badge { font-size: 13px; color: var(--muted); border: 1px solid var(--line);
+    background: var(--bg-soft); padding: 8px 14px; border-radius: 9px; }
+  .badge b { color: var(--green); font-weight: 700; }
 
-  .badges { margin-top: 40px; display:flex; gap: 10px; flex-wrap: wrap; }
-  .badge { font-size: 12.5px; color: var(--muted); border:1px solid var(--line); background: var(--bg-soft);
-    padding: 7px 13px; border-radius: 8px; font-family: var(--mono); }
-  .badge b { color: var(--green); font-weight: 600; }
+  section { padding: 76px 0; border-top: 1px solid var(--line); }
+  .eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 1.6px;
+    text-transform: uppercase; margin-bottom: 14px; text-align: center; }
+  h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.8px; font-weight: 800;
+    margin-bottom: 16px; text-align: center; }
+  .lead { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 48px;
+    text-align: center; }
 
-  section { padding: 72px 0; border-top: 1px solid var(--line); }
-  .eyebrow { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; margin-bottom: 14px; }
-  h2 { font-size: clamp(26px, 4vw, 38px); letter-spacing: -.8px; font-weight: 800; margin-bottom: 16px; }
-  .lead { color: var(--muted); font-size: 17px; max-width: 700px; margin-bottom: 40px; }
+  .grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }
+  @media (max-width: 820px){ .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+  .card .ico { width: 44px; height: 44px; border-radius: 11px; display: grid; place-items: center;
+    font-size: 22px; background: var(--panel-2); border: 1px solid var(--line); margin-bottom: 16px; }
+  .card h3 { font-size: 18px; margin-bottom: 9px; }
+  .card p { color: var(--muted); font-size: 14.5px; }
 
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 760px){ .grid2{ grid-template-columns: 1fr; } }
-  .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px;
-  }
-  .card h3 { font-size: 18px; margin-bottom: 10px; display:flex; align-items:center; gap:10px; }
-  .card p { color: var(--muted); font-size: 15px; }
-  .ico { width: 34px; height: 34px; border-radius: 9px; display:grid; place-items:center; font-size:18px;
-    background: var(--panel-2); border: 1px solid var(--line); }
-
-  .flow {
-    display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 0;
-    background: var(--bg-soft); border: 1px solid var(--line); border-radius: 18px; padding: 28px 18px;
-  }
-  @media (max-width: 860px){ .flow{ grid-template-columns: 1fr; gap: 14px; } .arrow{ transform: rotate(90deg); justify-self:center; } }
-  .node { text-align: center; padding: 22px 14px; border-radius: 14px; }
-  .node .nico { font-size: 30px; margin-bottom: 10px; }
-  .node .nt { font-weight: 700; font-size: 15px; }
-  .node .nd { color: var(--faint); font-size: 12.5px; margin-top: 4px; font-family: var(--mono); }
-  .node.db { background: linear-gradient(180deg, rgba(70,211,154,.10), transparent); border:1px solid rgba(70,211,154,.25); }
-  .node.proxy { background: linear-gradient(180deg, rgba(124,92,255,.14), transparent); border:1px solid rgba(124,92,255,.35); }
-  .node.agent { background: linear-gradient(180deg, rgba(91,140,255,.12), transparent); border:1px solid rgba(91,140,255,.3); }
-  .arrow { display:grid; place-items:center; color: var(--faint); font-size: 24px; padding: 0 6px; }
-  .flow-note { text-align:center; color: var(--faint); font-size: 13px; margin-top: 20px; font-family: var(--mono); }
-
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  @media (max-width: 860px){ .grid3{ grid-template-columns: 1fr; } }
-  .cap { background: var(--panel); border:1px solid var(--line); border-radius: 16px; padding: 26px; position: relative; overflow:hidden; }
-  .cap .num { position:absolute; right:18px; top:10px; font-size: 64px; font-weight: 800; color: rgba(255,255,255,.035); }
-  .cap h3 { font-size: 19px; margin-bottom: 10px; }
-  .cap p { color: var(--muted); font-size: 14.5px; }
-
-  /* api surface */
-  .endpoints { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 26px; }
-  @media (max-width: 760px){ .endpoints{ grid-template-columns: 1fr; } }
-  .ep { display:flex; align-items:flex-start; gap: 14px; background: var(--panel); border:1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
-  .verb { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; letter-spacing:.5px; flex-shrink:0; margin-top:2px; }
-  .verb.get { color: var(--green); background: rgba(70,211,154,.12); border:1px solid rgba(70,211,154,.3); }
-  .verb.post { color: var(--accent); background: rgba(91,140,255,.12); border:1px solid rgba(91,140,255,.3); }
-  .verb.del { color: var(--red); background: rgba(255,107,107,.12); border:1px solid rgba(255,107,107,.3); }
-  .ep .path { font-family: var(--mono); font-size: 13.5px; color: var(--text); }
-  .ep .ed { color: var(--faint); font-size: 12.5px; margin-top: 3px; }
-
-  .code {
-    background: #0c0f17; border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-    font-family: var(--mono); font-size: 13px;
-  }
-  .code .bar { display:flex; align-items:center; gap:8px; padding: 11px 16px; border-bottom:1px solid var(--line); background: var(--bg-soft); }
-  .code .bar .d { width:11px; height:11px; border-radius:50%; }
-  .code .bar .t { margin-left: 8px; color: var(--faint); font-size: 12px; }
-  .code pre { padding: 18px 18px; overflow-x: auto; line-height: 1.7; }
-  .c-key { color: #8fb1ff; }
-  .c-str { color: #46d39a; }
-  .c-num { color: #ffc24b; }
-  .c-com { color: #6b7488; }
-  .c-mask { color: var(--red); font-weight:600; }
-  .c-op { color: #b79bff; }
-  .demo { display:grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 860px){ .demo{ grid-template-columns: 1fr; } }
-
-  .mask-demo { display:grid; grid-template-columns: 1fr auto 1fr; gap: 0; align-items:center; }
-  @media (max-width: 760px){ .mask-demo{ grid-template-columns: 1fr; gap: 14px; } .mask-demo .ar{ transform: rotate(90deg); justify-self:center; } }
-  table { width:100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
-  th, td { text-align:left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
-  th { color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
-  .tcard { background: var(--panel); border:1px solid var(--line); border-radius: 14px; overflow:hidden; }
-  .tcard .cap-l { padding: 12px 14px; font-size: 12px; font-weight:700; letter-spacing: .5px; text-transform: uppercase; border-bottom:1px solid var(--line); }
+  /* proof */
+  .proof { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0; align-items: center; }
+  @media (max-width: 760px){ .proof { grid-template-columns: 1fr; gap: 14px; } .proof .ar { transform: rotate(90deg); justify-self: center; } }
+  .tcard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .tcard .cap-l { padding: 12px 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; border-bottom: 1px solid var(--line); }
   .tcard.raw .cap-l { color: var(--red); }
   .tcard.safe .cap-l { color: var(--green); }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   .masked { color: var(--red); }
-  .ar { display:grid; place-items:center; color: var(--faint); font-size: 22px; padding: 0 16px; }
+  .ar { display: grid; place-items: center; color: var(--faint); font-size: 24px; padding: 0 18px; }
+  .proof-note { text-align: center; color: var(--faint); font-size: 14px; margin-top: 26px; }
 
-  .guard { margin-top: 28px; display:flex; gap: 16px; background: linear-gradient(180deg, rgba(255,107,107,.06), transparent);
-    border:1px solid rgba(255,107,107,.28); border-radius: 14px; padding: 22px 24px; }
-  .guard .gi { font-size: 24px; }
-  .guard h4 { font-size: 16px; margin-bottom: 6px; color: #ffb4b4; }
-  .guard p { color: var(--muted); font-size: 14.5px; }
-  .guard code { font-family: var(--mono); color: #ffd0d0; background: rgba(255,107,107,.1); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; counter-reset: s; }
+  @media (max-width: 820px){ .steps { grid-template-columns: 1fr; } }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px; position: relative; }
+  .step .n { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 700; margin-bottom: 12px; }
+  .step h3 { font-size: 17px; margin-bottom: 8px; }
+  .step p { color: var(--muted); font-size: 14.5px; }
 
-  .blist { display:grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 760px){ .blist{ grid-template-columns: 1fr; } }
-  .ben { display:flex; gap:16px; background: var(--panel); border:1px solid var(--line); border-radius:14px; padding: 22px; }
-  .ben .bi { font-size: 24px; }
-  .ben h4 { font-size: 16px; margin-bottom: 6px; }
-  .ben p { color: var(--muted); font-size: 14px; }
+  .closing { text-align: center; }
+  .closing h2 { margin-bottom: 28px; }
 
-  .scope { display:grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-  @media (max-width: 760px){ .scope{ grid-template-columns: 1fr; } }
-  .scope ul { list-style:none; }
-  .scope li { padding: 9px 0; border-bottom:1px solid var(--line); color: var(--muted); font-size: 15px; display:flex; gap:10px; align-items:flex-start; }
-  .scope li .m { flex-shrink:0; }
-  .scope h4 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-  .scope .in h4 { color: var(--green); }
-  .scope .out h4 { color: var(--faint); }
-
-  footer { border-top:1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 13px; }
-  footer .wrap { display:flex; justify-content:space-between; flex-wrap: wrap; gap: 12px; }
+  footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 </style>
 </head>
 <body>
@@ -202,31 +112,24 @@
 
 <nav>
   <div class="wrap">
-    <div class="brand"><img class="logo" src="/logo.png" alt="maskdb logo" /> maskdb<span class="ai">.ai</span></div>
-    <div class="navlinks">
-      <a href="#problem">Problem</a>
-      <a href="#how">How it works</a>
-      <a href="#setup">Setup</a>
-      <a href="#api">The API</a>
-      <a href="#masking">Masking</a>
-      <a href="#why">Why</a>
-    </div>
+    <div class="brand"><img src="/logo.png" alt="maskdb logo" /> maskdb<span class="ai">.ai</span></div>
+    <a class="gh" href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener">GitHub →</a>
   </div>
 </nav>
 
 <header>
   <div class="wrap">
-    <span class="pill"><span class="live"></span> Safe agent ↔ database access · concept</span>
-    <h1>Let your agent access your<br/><span class="grad">production database.</span></h1>
-    <p class="sub">maskdb.ai turns any PostgreSQL database into a read-only REST API for AI agents. Your agent connects with a dedicated token instead of the real password, you control exactly which columns it can and can't read, and sensitive columns are masked before a single byte leaves the proxy. Every query an agent makes is audited.</p>
+    <span class="pill"><span class="live"></span> Safe database access for AI agents</span>
+    <h1>Let your agent reach your<br/><span class="grad">production database.</span></h1>
+    <p class="sub">maskdb gives your AI agents read-only, masked access to your real Postgres — without ever handing over the password or exposing sensitive data.</p>
     <div class="cta">
-      <a href="#how" class="btn primary">See how it works →</a>
-      <a href="#api" class="btn ghost">The API</a>
+      <a href="#capabilities" class="btn primary">What you get →</a>
+      <a href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener" class="btn ghost">View on GitHub</a>
     </div>
     <div class="badges">
-      <span class="badge"><b>✓</b> dedicated token, not your password</span>
-      <span class="badge"><b>✓</b> you choose readable columns</span>
-      <span class="badge"><b>✓</b> sensitive columns masked</span>
+      <span class="badge"><b>✓</b> never share the password</span>
+      <span class="badge"><b>✓</b> you choose what's visible</span>
+      <span class="badge"><b>✓</b> sensitive data masked</span>
       <span class="badge"><b>✓</b> every query audited</span>
     </div>
   </div>
@@ -234,247 +137,107 @@
 
 <main>
 
-  <!-- PROBLEM -->
-  <section id="problem">
-    <div class="wrap">
-      <div class="eyebrow">The problem</div>
-      <h2>Giving an agent a database is risky two ways</h2>
-      <p class="lead">AI agents increasingly need to read production data — but the two obvious ways to grant access both leak something you cannot take back.</p>
-      <div class="grid2">
-        <div class="card">
-          <h3><span class="ico">🔑</span> Credentials leak</h3>
-          <p>Handing an agent a raw connection string exposes the real host, user, and password. Once it lands in a prompt, a log line, or a tool call, the keys to the whole database are out — and rotating them breaks everything downstream.</p>
-        </div>
-        <div class="card">
-          <h3><span class="ico">🫥</span> Sensitive data leaks</h3>
-          <p>Even with read-only access, one <span style="font-family:var(--mono);color:#ffb4b4">SELECT *</span> pulls emails, phone numbers, tokens, and PII straight into the model's context — where it gets summarized, cached, and potentially memorized.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- HOW IT WORKS -->
-  <section id="how">
-    <div class="wrap">
-      <div class="eyebrow">How it works</div>
-      <h2>One gateway in the middle — nothing installed on your DB</h2>
-      <p class="lead">maskdb.ai holds the real connection. The agent only ever speaks a structured REST API, authenticated by a scoped token. Every result passes through the masking layer on the way out. You point it at an existing read-only connection string — no extensions, no views, no schema changes.</p>
-      <div class="flow">
-        <div class="node db">
-          <div class="nico">🗄️</div>
-          <div class="nt">PostgreSQL</div>
-          <div class="nd">untouched ·<br/>real creds stay here</div>
-        </div>
-        <div class="arrow">→</div>
-        <div class="node proxy">
-          <div class="nico">🛡️</div>
-          <div class="nt">maskdb.ai</div>
-          <div class="nd">compile + mask + auth</div>
-        </div>
-        <div class="arrow">→</div>
-        <div class="node agent">
-          <div class="nico">🤖</div>
-          <div class="nt">AI Agent</div>
-          <div class="nd">structured REST<br/>+ token · read-only</div>
-        </div>
-      </div>
-      <div class="flow-note">All safety lives in the proxy → the database is never modified and never sees the agent's token.</div>
-    </div>
-  </section>
-
   <!-- CAPABILITIES -->
   <section id="capabilities">
     <div class="wrap">
-      <div class="eyebrow">Capabilities</div>
-      <h2>What the proxy does</h2>
-      <div class="grid3">
-        <div class="cap">
-          <div class="num">01</div>
-          <h3>Structured queries, no raw SQL</h3>
-          <p>Agents send a JSON query — table, columns, filters — never a SQL string. With no expression surface to exploit, the whole class of <span style="font-family:var(--mono);font-size:12px">substring()</span> / <span style="font-family:var(--mono);font-size:12px">row_to_json</span> / oracle bypasses simply doesn't exist.</p>
+      <div class="eyebrow">What maskdb gives you</div>
+      <h2>Open your database to agents, safely</h2>
+      <p class="lead">Point it at any Postgres and hand your agents access you stay in full control of.</p>
+      <div class="grid">
+        <div class="card">
+          <div class="ico">🔑</div>
+          <h3>No password sharing</h3>
+          <p>Agents connect with a dedicated token, never your database credentials. Revoke it anytime without touching the database.</p>
         </div>
-        <div class="cap">
-          <div class="num">02</div>
-          <h3>Token-scoped & read-only</h3>
-          <p>Each API token is read-only by design and can be scoped, rotated, and revoked independently. The agent never sees the database password, host, or network.</p>
+        <div class="card">
+          <div class="ico">🫥</div>
+          <h3>Sensitive data masked</h3>
+          <p>Emails, phone numbers, secrets and free-text are masked before they ever leave the proxy. Raw values never reach the agent.</p>
         </div>
-        <div class="cap">
-          <div class="num">03</div>
-          <h3>Column-level masking</h3>
-          <p>Configure which columns to redact, hash, or partially reveal. Masking is applied as the query is compiled, so raw values never cross the wire — and masked columns can't be filtered on.</p>
+        <div class="card">
+          <div class="ico">🎛️</div>
+          <h3>You decide what's visible</h3>
+          <p>Choose exactly which tables and columns each agent can read, and how each one is masked. Everything else stays hidden.</p>
+        </div>
+        <div class="card">
+          <div class="ico">🔒</div>
+          <h3>Read-only by design</h3>
+          <p>Agents can query, never write. No raw SQL is accepted — just safe, structured reads against the data you allow.</p>
+        </div>
+        <div class="card">
+          <div class="ico">🧩</div>
+          <h3>Any Postgres, install nothing</h3>
+          <p>Point it at an existing connection string. No extensions, no replicas, no schema changes — your database is untouched.</p>
+        </div>
+        <div class="card">
+          <div class="ico">📋</div>
+          <h3>Scoped tokens & full audit</h3>
+          <p>Issue per-agent tokens with exactly the access they need, and every query is logged for a complete audit trail.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- SETUP / PROVISIONING -->
-  <section id="setup">
+  <!-- PROOF -->
+  <section>
     <div class="wrap">
-      <div class="eyebrow">Setup · control plane</div>
-      <h2>Two planes, two tokens</h2>
-      <p class="lead">An <strong>admin token</strong> provisions; an <strong>agent token</strong> queries. The control-plane API below is also exactly what the web console runs on. The whole flow is three steps.</p>
-
-      <div class="grid3" style="margin-bottom:30px">
-        <div class="cap">
-          <div class="num">01</div>
-          <h3>Self-register</h3>
-          <p>One API call returns an <span style="font-family:var(--mono);font-size:12px">admin_token</span> — instant, no human gate, abuse-controlled only. An agent can bootstrap itself.</p>
-        </div>
-        <div class="cap">
-          <div class="num">02</div>
-          <h3>Add a DB + set masking</h3>
-          <p>Register a database by <span style="font-family:var(--mono);font-size:12px">{name, connection_string}</span>, then set one masking baseline per column. This is the single place masking is configured.</p>
-        </div>
-        <div class="cap">
-          <div class="num">03</div>
-          <h3>Mint agent tokens</h3>
-          <p>Issue read-only <span style="font-family:var(--mono);font-size:12px">agent_token</span>s scoped to a set of DBs. Each inherits that DB's masking baseline. Revoke any token anytime.</p>
-        </div>
-      </div>
-
-      <div class="endpoints">
-        <div class="ep"><span class="verb post">POST</span><div><div class="path">/v1/accounts</div><div class="ed">Self-register → returns the account's admin_token.</div></div></div>
-        <div class="ep"><span class="verb post">POST</span><div><div class="path">/v1/databases</div><div class="ed">Add a DB by name + connection string (write-only, encrypted).</div></div></div>
-        <div class="ep"><span class="verb get">GET</span><div><div class="path">/v1/databases/{db}/schema</div><div class="ed">Raw, unmasked schema — to decide what to mask.</div></div></div>
-        <div class="ep"><span class="verb post">PUT</span><div><div class="path">/v1/databases/{db}/policy</div><div class="ed">Per-column enabled + mask strategy. The DB baseline.</div></div></div>
-        <div class="ep"><span class="verb post">POST</span><div><div class="path">/v1/agent-tokens</div><div class="ed">Mint a read-only token scoped to a set of db_ids.</div></div></div>
-        <div class="ep"><span class="verb del">DEL</span><div><div class="path">/v1/agent-tokens/{id}</div><div class="ed">Revoke a token instantly.</div></div></div>
-      </div>
-
-      <div class="code">
-        <div class="bar">
-          <span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span>
-          <span class="t">PUT /v1/databases/{db}/policy — the one masking baseline</span>
-        </div>
-<pre><span class="c-com"># Authorization: Bearer mk_admin_…</span>
-{
-  <span class="c-key">"tables"</span>: [{
-    <span class="c-key">"table"</span>: <span class="c-str">"users"</span>,
-    <span class="c-key">"columns"</span>: [
-      { <span class="c-key">"name"</span>:<span class="c-str">"id"</span>,      <span class="c-key">"enabled"</span>:<span class="c-op">true</span> },
-      { <span class="c-key">"name"</span>:<span class="c-str">"email"</span>,   <span class="c-key">"enabled"</span>:<span class="c-op">true</span>,  <span class="c-key">"mask"</span>:<span class="c-mask">"email"</span>  },
-      { <span class="c-key">"name"</span>:<span class="c-str">"api_key"</span>, <span class="c-key">"enabled"</span>:<span class="c-op">true</span>,  <span class="c-key">"mask"</span>:<span class="c-mask">"hash"</span>   },
-      { <span class="c-key">"name"</span>:<span class="c-str">"ssn"</span>,     <span class="c-key">"enabled"</span>:<span class="c-op">true</span>,  <span class="c-key">"mask"</span>:<span class="c-mask">"redact"</span> },
-      { <span class="c-key">"name"</span>:<span class="c-str">"notes"</span>,   <span class="c-key">"enabled"</span>:<span class="c-op">false</span> }
-    ]
-  }]
-}
-<span class="c-com"># mask: none | hash | redact | email | phone | null</span></pre>
-      </div>
-    </div>
-  </section>
-
-  <!-- THE API -->
-  <section id="api">
-    <div class="wrap">
-      <div class="eyebrow">The API · data plane</div>
-      <h2>A small, structured surface</h2>
-      <p class="lead">What the agent token uses. Every capability is its own endpoint backed by a fixed, parameterized query — never agent-supplied SQL. A token can span multiple DBs, so each endpoint is db-scoped. Agents introspect the schema, then build queries against it.</p>
-
-      <div class="endpoints">
-        <div class="ep"><span class="verb get">GET</span><div><div class="path">/v1/databases</div><div class="ed">List every DB this token can reach.</div></div></div>
-        <div class="ep"><span class="verb get">GET</span><div><div class="path">/v1/databases/{db}/tables</div><div class="ed">List the tables the token can reach in a DB.</div></div></div>
-        <div class="ep"><span class="verb get">GET</span><div><div class="path">/v1/databases/{db}/tables/{t}/schema</div><div class="ed">Enabled columns + per-column <i>masked</i> / <i>filterable</i> flags.</div></div></div>
-        <div class="ep"><span class="verb get">GET</span><div><div class="path">/v1/databases/{db}/tables/{t}/indexes</div><div class="ed">Index name, columns, uniqueness, method, validity.</div></div></div>
-        <div class="ep"><span class="verb post">POST</span><div><div class="path">/v1/databases/{db}/query</div><div class="ed">Structured SELECT / FROM / WHERE with a boolean DSL.</div></div></div>
-      </div>
-
-      <div class="demo">
-        <div class="code">
-          <div class="bar">
-            <span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span>
-            <span class="t">POST /v1/databases/{db}/query — request</span>
-          </div>
-<pre><span class="c-com"># Authorization: Bearer mk_agent_… — no host, no password</span>
-{
-  <span class="c-key">"table"</span>: <span class="c-str">"users"</span>,
-  <span class="c-key">"select"</span>: [<span class="c-str">"id"</span>, <span class="c-str">"name"</span>, <span class="c-str">"email"</span>, <span class="c-str">"plan"</span>],
-  <span class="c-key">"where"</span>: {
-    <span class="c-op">"and"</span>: [
-      { <span class="c-key">"col"</span>:<span class="c-str">"status"</span>, <span class="c-key">"op"</span>:<span class="c-str">"eq"</span>,  <span class="c-key">"value"</span>:<span class="c-str">"active"</span> },
-      { <span class="c-op">"or"</span>: [
-        { <span class="c-key">"col"</span>:<span class="c-str">"plan"</span>,    <span class="c-key">"op"</span>:<span class="c-str">"eq"</span>,  <span class="c-key">"value"</span>:<span class="c-str">"pro"</span> },
-        { <span class="c-key">"col"</span>:<span class="c-str">"credits"</span>, <span class="c-key">"op"</span>:<span class="c-str">"gte"</span>, <span class="c-key">"value"</span>:<span class="c-num">100</span> }
-      ]}
-    ]
-  },
-  <span class="c-key">"order_by"</span>: [{ <span class="c-key">"col"</span>:<span class="c-str">"id"</span>, <span class="c-key">"dir"</span>:<span class="c-str">"asc"</span> }],
-  <span class="c-key">"limit"</span>: <span class="c-num">100</span>, <span class="c-key">"offset"</span>: <span class="c-num">0</span>
-}</pre>
-        </div>
-        <div class="code">
-          <div class="bar">
-            <span class="d" style="background:#ff5f57"></span><span class="d" style="background:#febc2e"></span><span class="d" style="background:#28c840"></span>
-            <span class="t">response — masked</span>
-          </div>
-<pre>{
-  <span class="c-key">"rows"</span>: [
-    {
-      <span class="c-key">"id"</span>: <span class="c-num">1042</span>,
-      <span class="c-key">"name"</span>: <span class="c-str">"Ethan Zhang"</span>,
-      <span class="c-key">"email"</span>: <span class="c-mask">"e***@vm0.ai"</span>,
-      <span class="c-key">"plan"</span>: <span class="c-str">"pro"</span>
-    },
-    { <span class="c-com">/* … */</span> }
-  ],
-  <span class="c-key">"masked"</span>: [<span class="c-str">"email"</span>],
-  <span class="c-key">"page"</span>: { <span class="c-key">"limit"</span>:<span class="c-num">100</span>, <span class="c-key">"offset"</span>:<span class="c-num">0</span>, <span class="c-key">"returned"</span>:<span class="c-num">37</span> }
-}</pre>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- MASKING -->
-  <section id="masking">
-    <div class="wrap">
-      <div class="eyebrow">Column masking</div>
-      <h2>You decide what the agent is allowed to see</h2>
-      <p class="lead">Masking is set once per column when you register the database — a single baseline every agent token inherits. There's no per-token override to get wrong: if a column is masked, it's masked for every agent that touches that DB.</p>
-      <div class="mask-demo">
+      <div class="eyebrow">See it</div>
+      <h2>Real data in, masked data out</h2>
+      <p class="lead">The same row, as it lives in your database versus what the agent actually receives.</p>
+      <div class="proof">
         <div class="tcard raw">
-          <div class="cap-l">Raw row — in the database</div>
+          <div class="cap-l">In your database</div>
           <table>
-            <tr><th>id</th><th>email</th><th>api_key</th></tr>
-            <tr><td>1042</td><td>ethan@vm0.ai</td><td>sk_live_9f3a2b…</td></tr>
-            <tr><td>1043</td><td>lancy@vm0.ai</td><td>sk_live_77c1de…</td></tr>
+            <tr><th>id</th><th>email</th><th>phone</th><th>api_key</th></tr>
+            <tr><td>1042</td><td>ethan@vm0.ai</td><td>+1 213 555 0142</td><td>sk_live_9f3a2b…</td></tr>
+            <tr><td>1043</td><td>lancy@vm0.ai</td><td>+1 213 555 7791</td><td>sk_live_77c1de…</td></tr>
           </table>
         </div>
         <div class="ar">→</div>
         <div class="tcard safe">
-          <div class="cap-l">What the agent receives</div>
+          <div class="cap-l">What the agent sees</div>
           <table>
-            <tr><th>id</th><th>email</th><th>api_key</th></tr>
-            <tr><td>1042</td><td class="masked">e***@vm0.ai</td><td class="masked">••••••••</td></tr>
-            <tr><td>1043</td><td class="masked">l***@vm0.ai</td><td class="masked">••••••••</td></tr>
+            <tr><th>id</th><th>email</th><th>phone</th><th>api_key</th></tr>
+            <tr><td>1042</td><td class="masked">e***@vm0.ai</td><td class="masked">+X XXX XXX 0142</td><td class="masked">••••••••</td></tr>
+            <tr><td>1043</td><td class="masked">l***@vm0.ai</td><td class="masked">+X XXX XXX 7791</td><td class="masked">••••••••</td></tr>
           </table>
         </div>
       </div>
-      <p class="lead" style="margin-top:28px">Mask strategies mix per column: <strong>full redaction</strong> for secrets, <strong>partial reveal</strong> for emails and phones, <strong>deterministic hashing</strong> to keep values joinable without exposing them, or <strong>drop</strong> to omit the column entirely.</p>
+      <p class="proof-note">Mask each column your way — partial reveal, redaction, hashing, or hidden entirely.</p>
     </div>
   </section>
 
-  <!-- WHY -->
-  <section id="why">
+  <!-- STEPS -->
+  <section>
     <div class="wrap">
-      <div class="eyebrow">Why it matters</div>
-      <h2>Two guarantees, by construction</h2>
-      <div class="blist">
-        <div class="ben">
-          <span class="bi">🔐</span>
-          <div>
-            <h4>The real password never leaves the proxy</h4>
-            <p>Agents authenticate with disposable, read-only tokens. Compromise one and you revoke one token — the database credentials, host, and network stay invisible and intact.</p>
-          </div>
+      <div class="eyebrow">How simple it is</div>
+      <h2>Live in three steps</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="n">01</div>
+          <h3>Connect your database</h3>
+          <p>Give maskdb a read-only connection string. Nothing is installed or changed on your side.</p>
         </div>
-        <div class="ben">
-          <span class="bi">🧼</span>
-          <div>
-            <h4>Sensitive columns are masked at the source</h4>
-            <p>PII and secrets are redacted as the query compiles, before serialization. Raw values never reach the model's context, logs, or any cache it might write to — and can't be reconstructed through a filter.</p>
-          </div>
+        <div class="step">
+          <div class="n">02</div>
+          <h3>Choose what's visible</h3>
+          <p>Pick the tables and columns agents may read, and set how each sensitive column is masked.</p>
         </div>
+        <div class="step">
+          <div class="n">03</div>
+          <h3>Hand out a token</h3>
+          <p>Issue a scoped token to each agent. They query safe, masked data — you keep full control and audit.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSING -->
+  <section class="closing">
+    <div class="wrap">
+      <h2>Give your agents data,<br/>not your secrets.</h2>
+      <div class="cta">
+        <a href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener" class="btn primary">Get started on GitHub →</a>
       </div>
     </div>
   </section>
@@ -483,8 +246,8 @@
 
 <footer>
   <div class="wrap">
-    <div>maskdb.ai — a concept by the vm0 team</div>
-    <div>Any Postgres · install nothing · token-scoped · read-only · column-masked</div>
+    <div>maskdb.ai — safe, masked database access for AI agents</div>
+    <div>Any Postgres · install nothing · read-only · masked · audited</div>
   </div>
 </footer>
 
