@@ -33,6 +33,9 @@ export const RegisterBody = z.object({
 export const AddDatabaseBody = z.object({
   name: z.string().min(1).max(100),
   connection_string: z.string().min(1),
+  // Allowlist mode: only columns explicitly enabled in the policy are readable.
+  // Defaults to true so a raw production DB is safe to register.
+  default_deny: z.boolean().default(true),
 });
 
 export const PolicyBody = z.object({

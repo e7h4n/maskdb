@@ -29,7 +29,13 @@ data.get("/databases/:db/tables", requireAgent, async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
   try {
-    return c.json({ tables: await listTables(sql) });
+    const all = await listTables(sql);
+    if (db.default_deny === 1) {
+      // Allowlist: only surface tables that have at least one enabled column.
+      const { enabledTables } = await loadPolicy(c.env, db.id, true);
+      return c.json({ tables: all.filter((t) => enabledTables.has(t)) });
+    }
+    return c.json({ tables: all });
   } finally {
     await sql.end();
   }
@@ -39,7 +45,7 @@ data.get("/databases/:db/tables", requireAgent, async (c) => {
 data.get("/databases/:db/tables/:t/schema", requireAgent, async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const table = c.req.param("t");
-  const policyFor = await loadPolicy(c.env, db.id);
+  const { policyFor } = await loadPolicy(c.env, db.id, db.default_deny === 1);
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
   try {
     const cols = await describeTable(sql, table);
@@ -85,7 +91,7 @@ data.get("/databases/:db/tables/:t/indexes", requireAgent, async (c) => {
 data.post("/databases/:db/query", requireAgent, async (c) => {
   const db = await resolveDb(c, c.req.param("db"));
   const body = QueryBody.parse(await c.req.json());
-  const policyFor = await loadPolicy(c.env, db.id);
+  const { policyFor } = await loadPolicy(c.env, db.id, db.default_deny === 1);
   const maxLimit = parseInt(c.env.MAX_LIMIT || "1000", 10);
 
   const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
@@ -104,11 +110,15 @@ data.post("/databases/:db/query", requireAgent, async (c) => {
       maxLimit,
     );
 
+    // Run inside a READ ONLY transaction: even if the compiler ever emitted a
+    // write, Postgres rejects it. Defense-in-depth beyond the SELECT-only DSL.
     // params are pre-validated and bound positionally ($1..$n); the cast is
     // only to satisfy postgres.js's parameter type at the call boundary.
-    const rows = (await sql.unsafe(
-      compiled.text,
-      compiled.params as (string | number | boolean | null)[],
+    const rows = (await sql.begin("read only", (tx) =>
+      tx.unsafe(
+        compiled.text,
+        compiled.params as (string | number | boolean | null)[],
+      ),
     )) as Record<string, unknown>[];
 
     // Mask after fetching — raw values never leave this function.

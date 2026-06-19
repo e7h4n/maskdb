@@ -89,7 +89,22 @@ by every agent token:
 | `hash`   | irreversible SHA-256 (joinable) |
 | `null`   | `null`                          |
 
-A column with no policy row defaults to `enabled: true, mask: "none"`.
+## Allowlist vs allow-by-default
+
+Each database has a `default_deny` flag (set when you register it, **default
+`true`**):
+
+- **`default_deny: true` (allowlist)** — only columns explicitly enabled in the
+  policy are readable; every other column and table is hidden from introspection
+  and rejected if queried. Forgetting to mask a column fails *closed*. Use this
+  for any real/production database.
+- **`default_deny: false`** — a column with no policy row is visible and
+  unmasked. Only safe for an already-masked source (e.g. a static-masked
+  replica) where masking is defence-in-depth.
+
+Every query also runs inside a Postgres `READ ONLY` transaction, so a write can
+never reach the database even if the query compiler had a bug — on top of using
+a read-only DB role.
 
 ## Stack
 

@@ -43,13 +43,17 @@ control.post("/databases", requireAdmin, async (c) => {
   const id = crypto.randomUUID();
   const conn_enc = await encryptSecret(c.env.MASTER_KEY, body.connection_string);
   await c.env.DB.prepare(
-    "INSERT INTO databases (id, account_id, name, conn_enc, created_at) VALUES (?,?,?,?,?)",
+    "INSERT INTO databases (id, account_id, name, conn_enc, created_at, default_deny) VALUES (?,?,?,?,?,?)",
   )
-    .bind(id, accountId, body.name, conn_enc, nowIso())
+    .bind(id, accountId, body.name, conn_enc, nowIso(), body.default_deny ? 1 : 0)
     .run();
 
-  await audit(c.env, accountId, "admin", "db.add", { db_id: id, name: body.name });
-  return c.json({ db_id: id, name: body.name }, 201);
+  await audit(c.env, accountId, "admin", "db.add", {
+    db_id: id,
+    name: body.name,
+    default_deny: body.default_deny,
+  });
+  return c.json({ db_id: id, name: body.name, default_deny: body.default_deny }, 201);
 });
 
 // DELETE /v1/databases/:db
