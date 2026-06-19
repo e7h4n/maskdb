@@ -103,6 +103,27 @@
   .closing { text-align: center; }
   .closing h2 { margin-bottom: 28px; }
 
+  /* get started / AI setup */
+  .setupcard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .setupcard .bar { display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+  .setupcard .bar .t { font-family: var(--mono); font-size: 12.5px; color: var(--faint); }
+  .copybtn { font-size: 12.5px; font-weight: 600; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+  .copybtn:hover { border-color: #3a425a; }
+  .setupcard pre { padding: 20px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px;
+    line-height: 1.7; color: var(--text); max-height: 420px; overflow-y: auto; white-space: pre-wrap; }
+  .setupcard pre .c { color: var(--accent); }
+  .setupcard pre .m { color: var(--faint); }
+  .twocol { display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 820px){ .twocol { grid-template-columns: 1fr; } }
+  .sidenote { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+  .sidenote h4 { font-size: 14px; margin-bottom: 12px; }
+  .sidenote ol { margin: 0 0 0 18px; color: var(--muted); font-size: 14px; }
+  .sidenote ol li { padding: 5px 0; }
+  .sidenote .kbd { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .sidenote .warn { margin-top: 16px; color: var(--faint); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
+
   footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 13px; }
   footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 </style>
@@ -113,7 +134,10 @@
 <nav>
   <div class="wrap">
     <div class="brand"><img src="/logo.png" alt="maskdb logo" /> maskdb<span class="ai">.ai</span></div>
-    <a class="gh" href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener">GitHub →</a>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a class="gh" href="#start">Get started</a>
+      <a class="gh" href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener">GitHub →</a>
+    </div>
   </div>
 </nav>
 
@@ -232,6 +256,75 @@
     </div>
   </section>
 
+  <!-- GET STARTED -->
+  <section id="start">
+    <div class="wrap">
+      <div class="eyebrow">Get started</div>
+      <h2>Set it up with your AI — in one paste</h2>
+      <p class="lead">maskdb is built for AI agents, so the setup is too. Paste this into your AI assistant (Claude Code, Cursor, …). It registers your account, reads your schema, proposes what to mask, and mints a read-only token for your agents — you just approve.</p>
+      <div class="twocol">
+        <div class="setupcard">
+          <div class="bar">
+            <span class="t">paste into your AI assistant</span>
+            <button class="copybtn" data-target="setupPrompt">Copy</button>
+          </div>
+<pre id="setupPrompt">Set up maskdb (https://api.maskdb.ai) so my AI agents get safe, read-only,
+masked access to my Postgres database. Work step by step. Show me each token
+ONCE and tell me to store it in a secret manager — never log full tokens.
+
+API base https://api.maskdb.ai · auth header: Authorization: Bearer &lt;token&gt;
+
+<span class="c">1.</span> Register → admin token.
+   POST /v1/accounts {"owner_email":"&lt;MY_EMAIL&gt;"}
+   The returned token has scopes ["*"] — my root credential. Tell me to save
+   it somewhere safe; it cannot be recovered.
+
+<span class="c">2.</span> Ask me for a READ-ONLY Postgres connection string (recommend a SELECT-only
+   role, not an owner). If it has channel_binding=require, drop that and keep
+   sslmode=require.
+   POST /v1/databases {"name":"prod","connection_string":"&lt;CONN&gt;"}  (Bearer admin)
+   → save the db_id. It defaults to allowlist mode (only enabled columns show).
+
+<span class="c">3.</span> Read the raw schema and propose a masking policy.
+   GET /v1/databases/&lt;db_id&gt;/schema  (Bearer admin)
+   For each column decide enable + mask:
+     • ids / foreign keys / timestamps / enums / numbers → enable, mask "none"
+     • emails → "email"   · phone numbers → "phone"
+     • secrets / tokens / api keys / encrypted_* → "redact"
+     • free-text user content (prompts, messages, bodies, notes) → "null"
+     • unsure if sensitive → mask it, or leave it disabled (it stays hidden)
+   Show me the proposed policy and let me adjust before applying.
+
+<span class="c">4.</span> Apply the policy.
+   PUT /v1/databases/&lt;db_id&gt;/policy  (Bearer admin)
+   {"tables":[{"table":"...","columns":[{"name":"...","enabled":true,"mask":"..."}]}]}
+
+<span class="c">5.</span> Mint the read-only agent token (this is what I hand to my agents).
+   POST /v1/tokens  (Bearer admin)
+   {"name":"my-agent","scopes":["db:query","db:metadata"],"databases":["&lt;db_id&gt;"]}
+
+<span class="c">6.</span> Verify with the agent token: run a sample
+   POST /v1/databases/&lt;db_id&gt;/query {"table":"...","select":["..."],"limit":3}
+   and confirm sensitive columns come back masked, and that this token can
+   neither change the policy nor reach other databases.
+
+<span class="m">Never give an agent token policy:write (it could unmask). Keep the admin
+token offline. Every query is audited.</span></pre>
+        </div>
+        <div class="sidenote">
+          <h4>What you end up with</h4>
+          <ol>
+            <li>An <span class="kbd">admin token</span> — your root key, stored safely. Used only to manage.</li>
+            <li>Your database connected, in allowlist mode (nothing visible until you allow it).</li>
+            <li>A masking policy you approved — sensitive columns masked, the rest readable.</li>
+            <li>A read-only <span class="kbd">agent token</span> scoped to just that database — hand it to any agent.</li>
+          </ol>
+          <div class="warn">Prefer to do it by hand? The same six calls work from any HTTP client — see the <a href="/setup.md" style="color:var(--accent)">setup guide</a> or the <a href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener" style="color:var(--accent)">README</a>.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- CLOSING -->
   <section class="closing">
     <div class="wrap">
@@ -250,6 +343,19 @@
     <div>Any Postgres · install nothing · read-only · masked · audited</div>
   </div>
 </footer>
+
+<script>
+  document.querySelectorAll(".copybtn").forEach((b) => {
+    b.addEventListener("click", () => {
+      const el = document.getElementById(b.dataset.target);
+      navigator.clipboard.writeText(el.innerText).then(() => {
+        const old = b.textContent;
+        b.textContent = "Copied ✓";
+        setTimeout(() => (b.textContent = old), 1600);
+      });
+    });
+  });
+</script>
 
 </body>
 </html>
