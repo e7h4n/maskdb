@@ -124,6 +124,44 @@
   .sidenote .kbd { font-family: var(--mono); font-size: 12px; color: var(--accent); }
   .sidenote .warn { margin-top: 16px; color: var(--faint); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
 
+  /* interactive AI-run preview console */
+  .agentdemo { background: #0c0f17; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; min-height: 460px; }
+  .agentdemo .bar { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+  .agentdemo .dots { display: flex; gap: 6px; }
+  .agentdemo .dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .agentdemo .dots i:nth-child(1){ background:#ff5f57 } .agentdemo .dots i:nth-child(2){ background:#febc2e } .agentdemo .dots i:nth-child(3){ background:#28c840 }
+  .agentdemo .bar .t { font-family: var(--mono); font-size: 12px; color: var(--faint); flex: 1; }
+  .runbtn { font-size: 12.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg,var(--accent),var(--accent-2)); border: none; border-radius: 8px; padding: 7px 15px; cursor: pointer; }
+  .runbtn:hover { transform: translateY(-1px); } .runbtn:disabled { opacity: .5; cursor: default; transform: none; }
+  .feed { flex: 1; padding: 16px; overflow-y: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+  .feed .hint { color: var(--faint); text-align: center; margin: auto; padding: 60px 16px; }
+  .feed .hint b { color: var(--accent); }
+  .frow { display: flex; align-items: flex-start; gap: 9px; padding: 5px 0; animation: fin .25s ease; }
+  @keyframes fin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .frow .ic { width: 16px; flex-shrink: 0; text-align: center; }
+  .frow .tx { color: var(--muted); }
+  .frow .tx b { color: var(--text); font-weight: 600; }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp .7s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  .ok { color: var(--green); }
+  .chip { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); margin-left: 4px; }
+  .chip.tok { color: var(--accent); }
+  .schtbl { margin: 6px 0 6px 25px; border-left: 1px solid var(--line); padding-left: 12px; }
+  .schrow { display: flex; align-items: center; gap: 8px; padding: 3px 0; animation: fin .2s ease; }
+  .schrow .col { color: var(--muted); min-width: 168px; }
+  .schrow .col b { color: var(--text); }
+  .pill2 { font-size: 10.5px; padding: 1px 7px; border-radius: 5px; font-weight: 600; }
+  .pill2.none { color: var(--green); background: rgba(70,211,154,.12); }
+  .pill2.email, .pill2.phone { color: var(--accent); background: rgba(91,140,255,.14); }
+  .pill2.redact { color: var(--red); background: rgba(255,107,107,.13); }
+  .pill2.null { color: var(--faint); background: rgba(107,116,136,.18); }
+  .restbl { margin: 6px 0 4px 25px; font-size: 12px; }
+  .restbl .rr { display: flex; gap: 14px; padding: 2px 0; }
+  .restbl .k { color: var(--faint); min-width: 70px; }
+  .restbl .v.mask { color: var(--red); }
+  .donecard { margin-top: 10px; padding: 12px 14px; border: 1px solid rgba(70,211,154,.3); background: linear-gradient(180deg,rgba(70,211,154,.07),transparent); border-radius: 10px; color: var(--muted); }
+  .donecard b { color: var(--green); }
+
   footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 13px; }
   footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 </style>
@@ -311,15 +349,15 @@ API base https://api.maskdb.ai · auth header: Authorization: Bearer &lt;token&g
 <span class="m">Never give an agent token policy:write (it could unmask). Keep the admin
 token offline. Every query is audited.</span></pre>
         </div>
-        <div class="sidenote">
-          <h4>What you end up with</h4>
-          <ol>
-            <li>An <span class="kbd">admin token</span> — your root key, stored safely. Used only to manage.</li>
-            <li>Your database connected, in allowlist mode (nothing visible until you allow it).</li>
-            <li>A masking policy you approved — sensitive columns masked, the rest readable.</li>
-            <li>A read-only <span class="kbd">agent token</span> scoped to just that database — hand it to any agent.</li>
-          </ol>
-          <div class="warn">Prefer to do it by hand? The same six calls work from any HTTP client — see the <a href="/setup.md" style="color:var(--accent)">setup guide</a> or the <a href="https://github.com/e7h4n/maskdb" target="_blank" rel="noopener" style="color:var(--accent)">README</a>.</div>
+        <div class="agentdemo">
+          <div class="bar">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span class="t">your AI · maskdb setup</span>
+            <button class="runbtn" id="runDemo">▶ Run preview</button>
+          </div>
+          <div class="feed" id="demoFeed">
+            <div class="hint">Press <b>Run preview</b> to watch your AI register, read your schema, mask the sensitive columns, and mint a read-only token — right here.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -355,6 +393,104 @@ token offline. Every query is audited.</span></pre>
       });
     });
   });
+
+  // Interactive "watch your AI run it" preview — a scripted client-side demo.
+  (function () {
+    const btn = document.getElementById("runDemo");
+    const feed = document.getElementById("demoFeed");
+    if (!btn || !feed) return;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const SPIN = '<span class="spin"></span>';
+    const scrolldown = () => (feed.scrollTop = feed.scrollHeight);
+
+    function row(icon, html) {
+      const d = document.createElement("div");
+      d.className = "frow";
+      d.innerHTML = '<span class="ic">' + icon + '</span><span class="tx">' + html + "</span>";
+      feed.appendChild(d);
+      scrolldown();
+      return d;
+    }
+    function done(d, html) {
+      d.querySelector(".ic").innerHTML = '<span class="ok">✓</span>';
+      if (html) d.querySelector(".tx").innerHTML = html;
+      scrolldown();
+    }
+
+    const schema = [
+      ["users.id", "none", "visible"],
+      ["users.email", "email", "email"],
+      ["users.api_key", "redact", "redact"],
+      ["users.created_at", "none", "visible"],
+      ["messages.body", "null", "null"],
+      ["orders.total", "none", "visible"],
+    ];
+
+    async function run() {
+      btn.disabled = true;
+      feed.innerHTML = "";
+      let d;
+
+      d = row(SPIN, "Registering account…");
+      await sleep(850);
+      done(d, 'Registered <span class="chip tok">mk_admin_••••••••</span> <span style="color:var(--faint)">— stored safely</span>');
+      await sleep(420);
+
+      d = row(SPIN, "Connecting database <b>prod</b>…");
+      await sleep(900);
+      done(d, 'Connected <span class="chip">allowlist on</span>');
+      await sleep(380);
+
+      d = row(SPIN, "Reading schema, classifying columns…");
+      const tbl = document.createElement("div");
+      tbl.className = "schtbl";
+      feed.appendChild(tbl);
+      await sleep(500);
+      for (const [col, mask, label] of schema) {
+        const r = document.createElement("div");
+        r.className = "schrow";
+        const name = col.replace(/^([^.]+)\.(.+)$/, "$1.<b>$2</b>");
+        r.innerHTML = '<span class="col">' + name + '</span><span class="pill2 ' + mask + '">' + label + "</span>";
+        tbl.appendChild(r);
+        scrolldown();
+        await sleep(340);
+      }
+      done(d, "Schema read — <b>3 of 6</b> columns masked");
+      await sleep(440);
+
+      d = row(SPIN, "Applying masking policy…");
+      await sleep(780);
+      done(d, "Policy saved");
+      await sleep(360);
+
+      d = row(SPIN, "Minting read-only agent token…");
+      await sleep(880);
+      done(d, 'Minted <span class="chip tok">mk_••••••••</span> <span style="color:var(--faint)">— db:query · db:metadata · this DB only</span>');
+      await sleep(440);
+
+      d = row(SPIN, "Verifying with the agent token…");
+      await sleep(880);
+      done(d, "Query ran — sensitive columns masked");
+      const res = document.createElement("div");
+      res.className = "restbl";
+      res.innerHTML =
+        '<div class="rr"><span class="k">id</span><span class="v">1042</span></div>' +
+        '<div class="rr"><span class="k">email</span><span class="v mask">e***@acme.io</span></div>' +
+        '<div class="rr"><span class="k">api_key</span><span class="v mask">••••••••</span></div>';
+      feed.appendChild(res);
+      await sleep(320);
+
+      const card = document.createElement("div");
+      card.className = "donecard";
+      card.innerHTML = "<b>Ready.</b> Hand the agent token to your agents — they read masked data and nothing else. You keep the admin token.";
+      feed.appendChild(card);
+      scrolldown();
+
+      btn.textContent = "↻ Replay";
+      btn.disabled = false;
+    }
+    btn.addEventListener("click", run);
+  })();
 </script>
 
 </body>
