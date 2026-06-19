@@ -4,8 +4,10 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 # The masking + auth proxy. All control-plane and data-plane routes live here.
-# Bind your purchased domain in the Cloudflare dashboard (Workers > Custom Domains),
-# e.g. api.maskdb.ai -> this worker.
+# The custom domain below is reconciled on every `wrangler deploy`.
+[[routes]]
+pattern = "api.maskdb.ai"
+custom_domain = true
 
 # --- service metadata DB (Cloudflare D1 / SQLite) -------------------------
 # Create with:  wrangler d1 create maskdb

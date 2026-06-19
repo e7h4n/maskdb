@@ -146,6 +146,20 @@ curl -sX POST $API/v1/databases/$DB/query -H "authorization: Bearer $AGENT" \
   -d '{"table":"users","select":["id","email"],"limit":10}'
 ```
 
+## Deploy (CI/CD)
+
+Pushing to `main` triggers `.github/workflows/deploy.yml`, which deploys both
+the API worker (`api.maskdb.ai`) and the marketing site (`www.maskdb.ai`) to
+Cloudflare. Configure two repository secrets:
+
+- `CLOUDFLARE_API_TOKEN` — a scoped token with **Workers Scripts:Edit**,
+  **D1:Edit**, **Workers Routes:Edit**, and **Account Settings:Read**
+- `CLOUDFLARE_ACCOUNT_ID`
+
+The `MASTER_KEY` secret is set once with `wrangler secret put MASTER_KEY` and is
+preserved across deploys. The marketing site lives in [`site/`](./site) and is
+served as a static-assets Worker (`wrangler.site.toml`).
+
 ## Status & known limits
 
 v1 is intentionally small. Out of scope for now: joins, aggregates / `GROUP BY`

@@ -1,0 +1,13 @@
+# Marketing site — a static-assets-only Worker bound to www.maskdb.ai.
+# Deploy with:  wrangler deploy -c wrangler.site.toml
+name = "maskdb-site"
+compatibility_date = "2024-12-01"
+
+[assets]
+directory = "./site"
+# Single-page marketing site: serve index.html for any path.
+not_found_handling = "single-page-application"
+
+[[routes]]
+pattern = "www.maskdb.ai"
+custom_domain = true
