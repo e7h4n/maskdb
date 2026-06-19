@@ -13,7 +13,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "maskdb"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "5a4f465c-5f2f-453a-b4ae-e05f78f2e482"
 
 [vars]
 # Max rows any single /query may return. Hard ceiling, also the default.
