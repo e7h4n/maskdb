@@ -54,3 +54,7 @@ jobs:
       - name: Deploy marketing site (www.maskdb.ai)
         if: steps.guard.outputs.ready == 'true'
         run: npx wrangler deploy -c wrangler.site.toml
+
+      - name: Deploy apex redirect (maskdb.ai → www)
+        if: steps.guard.outputs.ready == 'true'
+        run: npx wrangler deploy -c wrangler.redirect.toml

@@ -1,0 +1,9 @@
+# Apex redirect worker — maskdb.ai → www.maskdb.ai.
+# Deploy with:  wrangler deploy -c wrangler.redirect.toml
+name = "maskdb-redirect"
+main = "redirect/worker.js"
+compatibility_date = "2024-12-01"
+
+[[routes]]
+pattern = "maskdb.ai"
+custom_domain = true
