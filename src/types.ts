@@ -140,3 +140,44 @@ export const QueryBody = z.object({
   offset: z.number().int().nonnegative().default(0),
 });
 export type QueryBody = z.infer<typeof QueryBody>;
+
+const OutputAlias = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_]{0,62}$/, {
+    message:
+      "alias must start with a letter or underscore and contain only letters, numbers, and underscores",
+  });
+
+export const AggregateMetric = z
+  .object({
+    op: z.enum(["count", "sum"]),
+    col: z.string().min(1).optional(),
+    as: OutputAlias.optional(),
+  })
+  .superRefine((metric, ctx) => {
+    if (metric.op === "sum" && !metric.col) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["col"],
+        message: "'sum' requires a column",
+      });
+    }
+  });
+
+export const AggregateBody = z.object({
+  table: z.string().min(1),
+  where: WhereNode.optional(),
+  group_by: z.array(z.string().min(1)).default([]),
+  metrics: z.array(AggregateMetric).min(1),
+  order_by: z
+    .array(
+      z.object({
+        col: z.string().min(1),
+        dir: z.enum(["asc", "desc"]).default("asc"),
+      }),
+    )
+    .optional(),
+  limit: z.number().int().positive().optional(),
+  offset: z.number().int().nonnegative().default(0),
+});
+export type AggregateBody = z.infer<typeof AggregateBody>;

@@ -141,6 +141,50 @@ Authorization: Bearer mk_…
 
 Operators: `eq` `neq` `gt` `gte` `lt` `lte` `contains` `in` `is_null`.
 
+## The aggregate DSL
+
+Use the aggregate endpoint for simple grouped counts and sums without exposing
+raw SQL:
+
+```jsonc
+POST /v1/databases/{db}/aggregate
+Authorization: Bearer mk_…
+{
+  "table": "orders",
+  "where": { "col": "status", "op": "eq", "value": "paid" },
+  "group_by": ["country"],
+  "metrics": [
+    { "op": "count", "as": "orders" },
+    { "op": "sum", "col": "amount", "as": "revenue" }
+  ],
+  "order_by": [{ "col": "revenue", "dir": "desc" }],
+  "limit": 100,
+  "offset": 0
+}
+```
+
+The response uses the same row envelope shape:
+
+```json
+{
+  "rows": [{ "country": "US", "orders": "42", "revenue": "1234.56" }],
+  "masked": [],
+  "page": { "limit": 100, "offset": 0, "returned": 1 }
+}
+```
+
+Aggregate queries keep the same masking boundary as row queries:
+
+- `where` can only reference enabled, unmasked columns.
+- `group_by` can only reference enabled, unmasked columns.
+- `sum(col)` and `count(col)` can only reference enabled, unmasked columns.
+- `sum(col)` requires a numeric Postgres column.
+- `count(*)` is supported without a column argument.
+- `order_by` can only reference returned group columns or metric aliases.
+
+No raw expressions, joins, `HAVING`, `DISTINCT`, or aggregates over masked
+columns are accepted.
+
 ## Masking strategies
 
 Set once per column on the database (`PUT /v1/databases/{db}/policy`, requires
@@ -241,8 +285,9 @@ served as a static-assets Worker (`wrangler.site.toml`).
 
 ## Status & known limits
 
-v1 is intentionally small. Out of scope for now: joins, aggregates / `GROUP BY`
-(can leak masked distributions), raw SQL (never), and writes of any kind.
+v1 is intentionally small. Out of scope for now: joins, arbitrary aggregates
+over expressions or masked columns, `HAVING`, `DISTINCT`, raw SQL (never), and
+writes of any kind.
 
 Operational caveats on Cloudflare Workers:
 
