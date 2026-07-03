@@ -2,12 +2,12 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { Context } from "hono";
 import { assertDb, requireScope } from "../auth";
-import { compileQuery } from "../compiler";
+import { compileAggregateQuery, compileQuery } from "../compiler";
 import { decryptSecret } from "../crypto";
 import { applyMask } from "../mask";
 import { connect, describeTable, listIndexes, listTables } from "../pg";
 import { audit, databaseById, loadPolicy } from "../store";
-import { type Env, QueryBody, type Vars } from "../types";
+import { AggregateBody, type Env, QueryBody, type Vars } from "../types";
 
 type Ctx = { Bindings: Env; Variables: Vars };
 
@@ -143,6 +143,65 @@ data.post("/databases/:db/query", requireScope("db:query"), async (c) => {
     return c.json({
       rows,
       masked: compiled.maskPlan.map((m) => m.column),
+      page: {
+        limit: Math.min(body.limit ?? maxLimit, maxLimit),
+        offset: body.offset,
+        returned: rows.length,
+      },
+    });
+  } finally {
+    await sql.end();
+  }
+});
+
+// POST /v1/databases/:db/aggregate — grouped counts and sums over unmasked
+// columns only. db:query + hasDatabase.
+data.post("/databases/:db/aggregate", requireScope("db:query"), async (c) => {
+  const db = await resolveDb(c, c.req.param("db"));
+  const body = AggregateBody.parse(await c.req.json());
+  const { policyFor, enabledTables } = await loadPolicy(c.env, db.id);
+  if (!enabledTables.has(body.table)) {
+    throw new HTTPException(404, { message: "table not found" });
+  }
+  const maxLimit = parseInt(c.env.MAX_LIMIT || "1000", 10);
+
+  const sql = connect(await decryptSecret(c.env.MASTER_KEY, db.conn_enc));
+  try {
+    const cols = await describeTable(sql, body.table);
+    if (cols.length === 0) {
+      throw new HTTPException(404, { message: "table not found" });
+    }
+    const validColumns = new Set(cols.map((c) => c.name));
+    const columnTypes = new Map(cols.map((c) => [c.name, c.type]));
+
+    const compiled = compileAggregateQuery(
+      body,
+      body.table,
+      validColumns,
+      columnTypes,
+      (col) => policyFor(body.table, col),
+      maxLimit,
+    );
+
+    const rows = (await sql.begin("read only", (tx) =>
+      tx.unsafe(
+        compiled.text,
+        compiled.params as (string | number | boolean | null)[],
+      ),
+    )) as Record<string, unknown>[];
+
+    const p = c.get("principal");
+    await audit(c.env, p.accountId, p.tokenId, "aggregate", {
+      db_id: db.id,
+      table: body.table,
+      group_by: body.group_by.length,
+      metrics: body.metrics.length,
+      returned: rows.length,
+    });
+
+    return c.json({
+      rows,
+      masked: [],
       page: {
         limit: Math.min(body.limit ?? maxLimit, maxLimit),
         offset: body.offset,
