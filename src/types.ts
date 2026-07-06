@@ -66,6 +66,10 @@ export const AddDatabaseBody = z.object({
   connection_string: z.string().min(1),
 });
 
+export const ReplaceDatabaseConnectionBody = z.object({
+  connection_string: z.string().min(1),
+});
+
 export const PolicyBody = z.object({
   tables: z.array(
     z.object({

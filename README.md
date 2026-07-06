@@ -52,7 +52,7 @@ parent (see [Containment](#containment)).
 | ---------------- | ------------------------------------------------------ |
 | `db:query`       | `POST /v1/databases/{db}/query`                        |
 | `db:metadata`    | list tables, table schema, indexes                     |
-| `db:manage`      | add DB, delete DB, read the **raw** (unmasked) schema  |
+| `db:manage`      | add DB, delete DB, replace connection string, read the **raw** schema |
 | `policy:read`    | `GET  /v1/databases/{db}/policy`                       |
 | `policy:write`   | `PUT  /v1/databases/{db}/policy`                       |
 | `token:mint`     | `POST /v1/tokens`                                       |
@@ -71,6 +71,11 @@ the account) or a list of specific database ids. Endpoints scoped to a single
 `{db}` additionally require that `{db}` be reachable by the token. Registering a
 new database (`POST /v1/databases`) is an account-level operation and requires
 `databases: ["*"]`.
+
+Replacing an existing database's upstream connection string
+(`PUT /v1/databases/{db}/connection`) is scoped to that database and requires
+`db:manage`. It does not create a new database id or broaden any token's
+`databases` reach.
 
 ### Containment
 
@@ -252,6 +257,10 @@ curl -sX POST $API/v1/accounts -d '{"owner_email":"you@example.com"}'
 # requires db:manage and an account-level (databases ["*"]) token
 curl -sX POST $API/v1/databases -H "authorization: Bearer $ROOT" \
   -d '{"name":"prod","connection_string":"postgres://readonly:…@host/db"}'
+
+# replace a database connection string in-place after credential rotation
+curl -sX PUT $API/v1/databases/$DB/connection -H "authorization: Bearer $ROOT" \
+  -d '{"connection_string":"postgres://readonly:…@host/db"}'
 
 # inspect the raw schema, then set a masking baseline
 curl -sX PUT $API/v1/databases/$DB/policy -H "authorization: Bearer $ROOT" \
