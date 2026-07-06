@@ -8,6 +8,7 @@ import {
   AddDatabaseBody,
   type Env,
   PolicyBody,
+  ReplaceDatabaseConnectionBody,
   type Vars,
 } from "../types";
 
@@ -75,6 +76,45 @@ control.delete("/databases/:db", requireScope("db:manage"), async (c) => {
   if (!res.meta.changes) throw new HTTPException(404, { message: "not found" });
   await audit(c.env, accountId, principal.tokenId, "db.delete", { db_id: dbId });
   return c.json({ ok: true });
+});
+
+// PUT /v1/databases/:db/connection — replace the encrypted upstream
+// connection string after validating it can connect.
+// db:manage + hasDatabase(db).
+control.put("/databases/:db/connection", requireScope("db:manage"), async (c) => {
+  const principal = c.get("principal");
+  const { accountId } = principal;
+  const dbId = c.req.param("db");
+  assertDb(principal, dbId);
+  const db = await databaseById(c.env, accountId, dbId);
+  if (!db) throw new HTTPException(404, { message: "not found" });
+
+  const body = ReplaceDatabaseConnectionBody.parse(await c.req.json());
+
+  // Validate the replacement before committing it. Keep upstream errors generic:
+  // they can expose private network details or the connection string.
+  const probe = connect(body.connection_string);
+  try {
+    await probe`SELECT 1`;
+  } catch {
+    throw new HTTPException(400, { message: "could not connect" });
+  } finally {
+    await probe.end();
+  }
+
+  const conn_enc = await encryptSecret(c.env.MASTER_KEY, body.connection_string);
+  const res = await c.env.DB.prepare(
+    "UPDATE databases SET conn_enc = ? WHERE id = ? AND account_id = ?",
+  )
+    .bind(conn_enc, dbId, accountId)
+    .run();
+  if (!res.meta.changes) throw new HTTPException(404, { message: "not found" });
+
+  await audit(c.env, accountId, principal.tokenId, "db.connection.replace", {
+    db_id: dbId,
+    name: db.name,
+  });
+  return c.json({ ok: true, db_id: dbId, name: db.name });
 });
 
 // GET /v1/databases/:db/schema — RAW, unmasked schema. db:manage + hasDatabase.
