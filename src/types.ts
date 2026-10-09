@@ -35,6 +35,7 @@ export const Scope = z.enum([
   "policy:write",
   "token:mint",
   "token:read",
+  "token:update",
   "token:revoke",
   "account:admin",
   // wildcards
@@ -90,6 +91,13 @@ export const MintTokenBody = z.object({
   scopes: z.array(Scope).min(1),
   databases: z.array(z.string().min(1)).min(1),
 });
+
+// Replace only the database allowlist; token identity and scopes stay unchanged.
+export const UpdateTokenBody = z
+  .object({
+    databases: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
 
 // ---- data plane query DSL -------------------------------------------------
 export const OP = z.enum([
