@@ -4,7 +4,7 @@ import { requireScope } from "../auth";
 import { hashToken, newToken } from "../crypto";
 import { databasesSubset, scopesSubset } from "../scopes";
 import { audit, databaseById } from "../store";
-import { type Env, MintTokenBody, type Vars } from "../types";
+import { type Env, MintTokenBody, UpdateTokenBody, type Vars } from "../types";
 
 type Ctx = { Bindings: Env; Variables: Vars };
 
@@ -101,6 +101,71 @@ tokens.get("/tokens", requireScope("token:read"), async (c) => {
       created_at: t.created_at,
       last_used_at: t.last_used_at,
     })),
+  });
+});
+
+// PATCH /v1/tokens/:id — replace database reach without rotating the secret.
+tokens.patch("/tokens/:id", requireScope("token:update"), async (c) => {
+  const caller = c.get("principal");
+  const id = c.req.param("id");
+  const body = UpdateTokenBody.parse(await c.req.json());
+  const target = await c.env.DB.prepare(
+    "SELECT name, scopes, databases FROM tokens WHERE id = ? AND account_id = ?",
+  )
+    .bind(id, caller.accountId)
+    .first<{ name: string; scopes: string; databases: string }>();
+  if (!target) throw new HTTPException(404, { message: "not found" });
+
+  // Even unchanged capabilities must be contained: otherwise a narrow manager
+  // could grant its databases to a more privileged token (a confused deputy).
+  if (!scopesSubset(JSON.parse(target.scopes) as string[], caller.scopes)) {
+    throw new HTTPException(400, { message: "scopes not a subset of caller" });
+  }
+  if (
+    !databasesSubset(
+      JSON.parse(target.databases) as string[],
+      caller.databases,
+    ) ||
+    !databasesSubset(body.databases, caller.databases)
+  ) {
+    throw new HTTPException(400, {
+      message: "databases not a subset of caller",
+    });
+  }
+  for (const dbId of body.databases) {
+    if (dbId === "*") continue;
+    if (!(await databaseById(c.env, caller.accountId, dbId))) {
+      throw new HTTPException(400, { message: `unknown database: ${dbId}` });
+    }
+  }
+
+  // Do not overwrite a concurrent change or update a revoked token.
+  const result = await c.env.DB.prepare(
+    "UPDATE tokens SET databases = ? WHERE id = ? AND account_id = ? AND scopes = ? AND databases = ?",
+  )
+    .bind(
+      JSON.stringify(body.databases),
+      id,
+      caller.accountId,
+      target.scopes,
+      target.databases,
+    )
+    .run();
+  if (!result.meta.changes) {
+    throw new HTTPException(409, {
+      message: "token changed; read it again before updating",
+    });
+  }
+  await audit(c.env, caller.accountId, caller.tokenId, "token.update", {
+    token_id: id,
+    previous_databases: JSON.parse(target.databases) as string[],
+    databases: body.databases,
+  });
+  return c.json({
+    token_id: id,
+    name: target.name,
+    scopes: JSON.parse(target.scopes) as string[],
+    databases: body.databases,
   });
 });
 

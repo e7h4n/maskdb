@@ -57,6 +57,7 @@ parent (see [Containment](#containment)).
 | `policy:write`   | `PUT  /v1/databases/{db}/policy`                       |
 | `token:mint`     | `POST /v1/tokens`                                       |
 | `token:read`     | `GET  /v1/tokens`                                       |
+| `token:update`   | `PATCH /v1/tokens/{id}` — replace database reach         |
 | `token:revoke`   | `DELETE /v1/tokens/{id}`                                |
 | `account:admin`  | reserved for account-level operations                  |
 
@@ -103,7 +104,33 @@ Authorization: Bearer mk_…
 
 GET    /v1/tokens          → [{ id, name, scopes, databases, created_at, last_used_at }]
 DELETE /v1/tokens/{id}     → revoke (never returns the secret)
+
+PATCH /v1/tokens/{id}
+Authorization: Bearer mk_…
+{ "databases": ["<existing_db_id>", "<new_db_id>"] }
+→ 200 { "token_id": "…", "name": "support-bot",
+        "scopes": ["db:query", "db:metadata"], "databases": […] }
 ```
+
+`PATCH` requires `token:update` (also satisfied by `token:*` or `*`) and
+**replaces** the entire database allowlist; include existing database IDs to
+retain them. It does not change the token's secret, ID, name, or scopes, and
+never returns the secret. New reach takes effect on subsequent authenticated
+requests; already authenticated requests retain their captured permissions.
+
+Only tokens in the caller's account can be updated. Both the target's unchanged
+scopes and its existing database reach must be contained by the caller, as must
+the new database reach. Every concrete database ID must belong to that account.
+This prevents a narrowly scoped manager from granting databases to a token with
+stronger capabilities. Unknown or foreign tokens return `404`; containment and
+invalid database failures return `400`. A concurrent target change or revocation
+returns `409`; read the current token before deciding whether to retry.
+
+The body accepts only a non-empty `databases` array. Updates are audited as
+`token.update` with the target ID and previous/new database ranges. No database
+schema migration or token rotation is required. API deployment alone does not
+change existing tokens. Clients with an outbound firewall must separately allow
+`PATCH /v1/tokens/{id}` under `token:update` before calling it.
 
 A failed scope check returns `403 {"error":"missing scope: <scope>"}`; a token
 reaching a database it isn't scoped to returns
