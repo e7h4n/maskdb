@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { assertDb, requireScope } from "../auth";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { connect, describeTable, listTables } from "../pg";
-import { audit, databaseById, listPolicyRows } from "../store";
+import { audit, databaseById, listPolicyRows, parseJsonFields } from "../store";
 import {
   AddDatabaseBody,
   type Env,
@@ -161,8 +161,11 @@ control.put("/databases/:db/policy", requireScope("policy:write"), async (c) => 
       count++;
       stmts.push(
         c.env.DB.prepare(
-          "INSERT INTO column_policies (database_id, table_name, column_name, enabled, mask) VALUES (?,?,?,?,?)",
-        ).bind(dbId, t.table, col.name, col.enabled ? 1 : 0, col.mask),
+          "INSERT INTO column_policies (database_id, table_name, column_name, enabled, mask, json_fields) VALUES (?,?,?,?,?,?)",
+        ).bind(
+          dbId, t.table, col.name, col.enabled ? 1 : 0, col.mask,
+          col.json_fields ? JSON.stringify(col.json_fields) : null,
+        ),
       );
     }
   }
@@ -192,6 +195,7 @@ control.get("/databases/:db/policy", requireScope("policy:read"), async (c) => {
       name: r.column_name,
       enabled: r.enabled === 1,
       mask: r.mask,
+      ...(r.mask === "json" ? { json_fields: parseJsonFields(r.json_fields) ?? [] } : {}),
     })),
   });
 });

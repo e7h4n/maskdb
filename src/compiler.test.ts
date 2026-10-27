@@ -23,6 +23,54 @@ function policyFor(col: string): ColPolicy {
 }
 
 describe("compileQuery", () => {
+  it("carries JSON fields through masking without allowing JSON predicates", () => {
+    const columns = new Set(["entries"]);
+    const jsonPolicy = (): ColPolicy => ({
+      enabled: true,
+      mask: "json",
+      jsonFields: ["status", "updatedAt"],
+    });
+    const body = QueryBody.parse({ table: "suggestions", select: ["entries"] });
+    const result = compileQuery(body, body.table, columns, jsonPolicy, 100);
+    expect(result.maskPlan).toStrictEqual([
+      { column: "entries", mask: "json", jsonFields: ["status", "updatedAt"] },
+    ]);
+    expect(() =>
+      compileQuery(
+        { ...body, where: { col: "entries", op: "eq", value: "private" } },
+        body.table,
+        columns,
+        jsonPolicy,
+        100,
+      ),
+    ).toThrow(CompileError);
+    expect(() =>
+      compileQuery(
+        { ...body, order_by: [{ col: "entries", dir: "asc" }] },
+        body.table,
+        columns,
+        jsonPolicy,
+        100,
+      ),
+    ).toThrow(CompileError);
+    for (const aggregate of [
+      { group_by: ["entries"], metrics: [{ op: "count" }] },
+      { metrics: [{ op: "count", col: "entries" }] },
+      { metrics: [{ op: "sum", col: "entries" }] },
+    ]) {
+      expect(() =>
+        compileAggregateQuery(
+          AggregateBody.parse({ table: "suggestions", ...aggregate }),
+          body.table,
+          columns,
+          new Map([["entries", "jsonb"]]),
+          jsonPolicy,
+          100,
+        ),
+      ).toThrow(CompileError);
+    }
+  });
+
   it("allows selecting masked columns but rejects filtering on them", () => {
     const selected = compileQuery(
       QueryBody.parse({

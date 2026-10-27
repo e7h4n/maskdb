@@ -54,8 +54,46 @@ export const MaskStrategy = z.enum([
   "email",
   "phone",
   "null",
+  "json",
 ]);
 export type MaskStrategy = z.infer<typeof MaskStrategy>;
+
+// Top-level fields only: nested values are still redacted by the JSON mask.
+export const JsonFields = z
+  .array(
+    z.string().min(1).max(128).regex(/^[A-Za-z_][A-Za-z0-9_]*$/).refine(
+      (name) => !["__proto__", "constructor", "prototype"].includes(name),
+      "reserved JSON field",
+    ),
+  )
+  .min(1)
+  .max(64)
+  .refine(
+    (fields) => new Set(fields).size === fields.length,
+    "duplicate JSON fields",
+  );
+
+const PolicyColumn = z.object({
+  name: z.string().min(1),
+  enabled: z.boolean().default(true),
+  mask: MaskStrategy.default("none"),
+  json_fields: JsonFields.optional(),
+}).superRefine((column, context) => {
+  if (column.mask === "json" && column.json_fields === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["json_fields"],
+      message: "json mask requires json_fields",
+    });
+  }
+  if (column.mask !== "json" && column.json_fields !== undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["json_fields"],
+      message: "json_fields requires json mask",
+    });
+  }
+});
 
 // ---- control plane request bodies -----------------------------------------
 export const RegisterBody = z.object({
@@ -75,13 +113,7 @@ export const PolicyBody = z.object({
   tables: z.array(
     z.object({
       table: z.string().min(1),
-      columns: z.array(
-        z.object({
-          name: z.string().min(1),
-          enabled: z.boolean().default(true),
-          mask: MaskStrategy.default("none"),
-        }),
-      ),
+      columns: z.array(PolicyColumn),
     }),
   ),
 });

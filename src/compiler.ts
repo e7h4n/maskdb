@@ -11,13 +11,18 @@ export class CompileError extends Error {}
 export interface ColPolicy {
   enabled: boolean;
   mask: MaskStrategy;
+  jsonFields?: readonly string[];
 }
 
 export interface Compiled {
   text: string;
   params: unknown[];
   // Columns selected that must be masked post-fetch, in result order.
-  maskPlan: { column: string; mask: MaskStrategy }[];
+  maskPlan: {
+    column: string;
+    mask: MaskStrategy;
+    jsonFields?: readonly string[];
+  }[];
 }
 
 export interface AggregateCompiled {
@@ -125,10 +130,16 @@ export function compileQuery(
   };
 
   // --- SELECT (masked columns are fetched raw, masked after the query) ----
-  const maskPlan: { column: string; mask: MaskStrategy }[] = [];
+  const maskPlan: Compiled["maskPlan"] = [];
   const selectSql = body.select.map((col) => {
     const p = resolve(col, validColumns, policyFor, "select");
-    if (p.mask !== "none") maskPlan.push({ column: col, mask: p.mask });
+    if (p.mask !== "none") {
+      maskPlan.push({
+        column: col,
+        mask: p.mask,
+        ...(p.jsonFields ? { jsonFields: p.jsonFields } : {}),
+      });
+    }
     return ident(col);
   });
 

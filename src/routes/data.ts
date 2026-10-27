@@ -60,6 +60,7 @@ data.get("/databases/:db/tables/:t/schema", requireScope("db:metadata"), async (
         nullable: col.nullable,
         masked: p.mask !== "none",
         filterable: p.mask === "none",
+        ...(p.mask === "json" ? { json_fields: p.jsonFields ?? [] } : {}),
       }));
     return c.json({ table, columns: projected });
   } finally {
@@ -127,8 +128,8 @@ data.post("/databases/:db/query", requireScope("db:query"), async (c) => {
 
     // Mask after fetching — raw values never leave this function.
     for (const row of rows) {
-      for (const { column, mask } of compiled.maskPlan) {
-        row[column] = await applyMask(mask, row[column]);
+      for (const { column, mask, jsonFields } of compiled.maskPlan) {
+        row[column] = await applyMask(mask, row[column], jsonFields);
       }
     }
 

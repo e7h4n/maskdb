@@ -1,5 +1,22 @@
-import type { MaskStrategy } from "./types";
+import { JsonFields, type MaskStrategy } from "./types";
 import { sha256Hex } from "./crypto";
+
+function projectJsonObject(value: unknown, fields: readonly string[]): unknown {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return "••••••••";
+  const object = value as Record<string, unknown>;
+  return Object.fromEntries(
+    fields
+      .filter((field) => Object.prototype.hasOwnProperty.call(object, field))
+      .map((field) => {
+        const item = object[field];
+        const scalar = item === null || typeof item === "string" ||
+          typeof item === "boolean" ||
+          (typeof item === "number" && Number.isFinite(item));
+        return [field, scalar ? item : "••••••••"];
+      }),
+  );
+}
 
 // Masks are applied inside the proxy, after fetching from Postgres and before
 // the response is serialized to the agent. Raw values never reach the caller.
@@ -9,9 +26,18 @@ import { sha256Hex } from "./crypto";
 export async function applyMask(
   strategy: MaskStrategy,
   value: unknown,
+  jsonFields?: readonly string[],
 ): Promise<unknown> {
   if (strategy === "none") return value;
   if (value === null || value === undefined) return value;
+
+  if (strategy === "json") {
+    const fields = JsonFields.safeParse(jsonFields);
+    if (!fields.success) return "••••••••";
+    return Array.isArray(value)
+      ? value.map((item) => projectJsonObject(item, fields.data))
+      : projectJsonObject(value, fields.data);
+  }
 
   // Partial-reveal masks assume a plain string. For JSON/array columns (parsed
   // into objects by postgres.js), stringifying could echo structure/content —

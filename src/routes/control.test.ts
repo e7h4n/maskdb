@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import app from "../index";
 import { decryptSecret, encryptSecret, hashToken } from "../crypto";
-import { connect } from "../pg";
+import { connect, describeTable } from "../pg";
+import type { PolicyRow } from "../store";
 import type { Env } from "../types";
 
 vi.mock("../pg", () => {
@@ -45,6 +46,7 @@ interface TestState {
   tokens: TokenRow[];
   databases: DatabaseRow[];
   audits: AuditRow[];
+  policies: PolicyRow[];
 }
 
 const connectMock = vi.mocked(connect);
@@ -85,6 +87,7 @@ async function seedState(scopes: readonly string[]): Promise<TestState> {
       },
     ],
     audits: [],
+    policies: [],
   };
 }
 
@@ -95,6 +98,8 @@ function createEnv(state: TestState): Env {
         return {
           bind(...args: unknown[]) {
             return {
+              query,
+              args,
               async first<T>() {
                 if (
                   query ===
@@ -155,13 +160,32 @@ function createEnv(state: TestState): Env {
                 throw new Error(`unexpected run query: ${query}`);
               },
               async all<T>() {
+                if (query.includes("FROM column_policies")) {
+                  return { results: state.policies as T[] };
+                }
                 return { results: [] as T[] };
               },
             };
           },
         };
       },
-      async batch() {
+      async batch(statements: { query: string; args: unknown[] }[]) {
+        for (const statement of statements) {
+          if (statement.query.startsWith("DELETE FROM column_policies")) {
+            state.policies = [];
+          } else if (statement.query.startsWith("INSERT INTO column_policies")) {
+            const [, table, name, enabled, mask, fields] = statement.args;
+            state.policies.push({
+              table_name: String(table),
+              column_name: String(name),
+              enabled: Number(enabled),
+              mask: mask as PolicyRow["mask"],
+              json_fields: fields === null ? null : String(fields),
+            });
+          } else {
+            throw new Error(`unexpected batch query: ${statement.query}`);
+          }
+        }
         return [];
       },
     } as unknown as D1Database,
@@ -174,6 +198,161 @@ function createEnv(state: TestState): Env {
     },
   };
 }
+
+describe("JSON policy round-trip and query response", () => {
+  it("persists an allowlist and exposes only metadata through the data route", async () => {
+    const state = await seedState([
+      "policy:write",
+      "policy:read",
+      "db:query",
+      "db:metadata",
+    ]);
+    const env = createEnv(state);
+    const context = executionContext();
+    const headers = {
+      authorization: `Bearer ${TOKEN}`,
+      "content-type": "application/json",
+    };
+    const jsonFields = ["id", "status", "updatedAt"];
+    const policy = await app.request(
+      "/v1/databases/db_1/policy",
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          tables: [
+            {
+              table: "suggestions",
+              columns: [
+                { name: "entries", mask: "json", json_fields: jsonFields },
+              ],
+            },
+          ],
+        }),
+      },
+      env,
+      context,
+    );
+    expect(policy.status).toBe(200);
+    expect(state.policies[0]?.json_fields).toBe(JSON.stringify(jsonFields));
+    const readBack = await app.request(
+      "/v1/databases/db_1/policy",
+      { headers },
+      env,
+      context,
+    );
+    expect(await readBack.json()).toStrictEqual({
+      db_id: "db_1",
+      columns: [
+        {
+          table: "suggestions",
+          name: "entries",
+          enabled: true,
+          mask: "json",
+          json_fields: jsonFields,
+        },
+      ],
+    });
+
+    vi.mocked(describeTable).mockResolvedValue([
+      { name: "entries", type: "jsonb", nullable: false },
+    ]);
+    const raw = [
+      {
+        entries: [
+          {
+            id: "s1",
+            status: "active",
+            updatedAt: "2026-10-27T10:00:00Z",
+            title: "private",
+            draft: { text: "secret" },
+            unapproved: "secret",
+          },
+        ],
+      },
+    ];
+    const upstream = {
+      begin: vi.fn(async () => structuredClone(raw)),
+      end: vi.fn(async () => {}),
+    };
+    connectMock.mockReturnValue(
+      upstream as unknown as ReturnType<typeof connect>,
+    );
+    const schema = await app.request(
+      "/v1/databases/db_1/tables/suggestions/schema",
+      { headers },
+      env,
+      context,
+    );
+    expect(await schema.json()).toStrictEqual({
+      table: "suggestions",
+      columns: [
+        {
+          name: "entries",
+          type: "jsonb",
+          nullable: false,
+          masked: true,
+          filterable: false,
+          json_fields: jsonFields,
+        },
+      ],
+    });
+    const response = await app.request(
+      "/v1/databases/db_1/query",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ table: "suggestions", select: ["entries"] }),
+      },
+      env,
+      context,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toStrictEqual({
+      rows: [
+        {
+          entries: [
+            { id: "s1", status: "active", updatedAt: "2026-10-27T10:00:00Z" },
+          ],
+        },
+      ],
+      masked: ["entries"],
+      page: { limit: 100, offset: 0, returned: 1 },
+    });
+  });
+
+  it("rejects a JSON policy without fields before changing the existing baseline", async () => {
+    const state = await seedState(["policy:write"]);
+    state.policies = [{
+      table_name: "users", column_name: "email", enabled: 1,
+      mask: "email", json_fields: null,
+    }];
+    const baseline = structuredClone(state.policies);
+    const env = createEnv(state);
+    const response = await app.request(
+      "/v1/databases/db_1/policy",
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          tables: [
+            {
+              table: "suggestions",
+              columns: [{ name: "entries", mask: "json" }],
+            },
+          ],
+        }),
+      },
+      env,
+      executionContext(),
+    );
+    expect(response.status).toBe(400);
+    expect(state.policies).toStrictEqual(baseline);
+  });
+});
 
 function executionContext(): ExecutionContext {
   return {

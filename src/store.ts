@@ -1,5 +1,15 @@
 import type { ColPolicy } from "./compiler";
-import type { Env, MaskStrategy } from "./types";
+import { JsonFields, type Env, type MaskStrategy } from "./types";
+
+export function parseJsonFields(value: string | null): string[] | undefined {
+  if (value === null) return undefined;
+  try {
+    const fields = JsonFields.safeParse(JSON.parse(value));
+    return fields.success ? fields.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // Thin typed helpers over D1. Kept deliberately small — no ORM.
 
@@ -82,7 +92,7 @@ export async function loadPolicy(
   dbId: string,
 ): Promise<ResolvedPolicy> {
   const { results } = await env.DB.prepare(
-    "SELECT table_name, column_name, enabled, mask FROM column_policies WHERE database_id = ?",
+    "SELECT table_name, column_name, enabled, mask, json_fields FROM column_policies WHERE database_id = ?",
   )
     .bind(dbId)
     .all<{
@@ -90,13 +100,18 @@ export async function loadPolicy(
       column_name: string;
       enabled: number;
       mask: MaskStrategy;
+      json_fields: string | null;
     }>();
 
   const map = new Map<string, ColPolicy>();
   const enabledTables = new Set<string>();
   for (const r of results) {
     const enabled = r.enabled === 1;
-    map.set(`${r.table_name} ${r.column_name}`, { enabled, mask: r.mask });
+    map.set(`${r.table_name} ${r.column_name}`, {
+      enabled,
+      mask: r.mask,
+      ...(r.mask === "json" ? { jsonFields: parseJsonFields(r.json_fields) } : {}),
+    });
     if (enabled) enabledTables.add(r.table_name);
   }
 
@@ -115,6 +130,7 @@ export interface PolicyRow {
   column_name: string;
   enabled: number;
   mask: MaskStrategy;
+  json_fields: string | null;
 }
 
 // Raw column_policies rows for a database (used by GET policy).
@@ -123,7 +139,7 @@ export async function listPolicyRows(
   dbId: string,
 ): Promise<PolicyRow[]> {
   const { results } = await env.DB.prepare(
-    "SELECT table_name, column_name, enabled, mask FROM column_policies WHERE database_id = ? ORDER BY table_name, column_name",
+    "SELECT table_name, column_name, enabled, mask, json_fields FROM column_policies WHERE database_id = ? ORDER BY table_name, column_name",
   )
     .bind(dbId)
     .all<PolicyRow>();

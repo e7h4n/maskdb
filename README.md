@@ -230,6 +230,30 @@ Set once per column on the database (`PUT /v1/databases/{db}/policy`, requires
 | `phone`  | last 4 digits kept: `+X (XXX) XXX-1848` |
 | `hash`   | irreversible SHA-256 (joinable) |
 | `null`   | `null`                          |
+| `json`   | only configured scalar fields from a JSON object or array of objects |
+
+For JSON columns that mix metadata with sensitive content, opt in to a field
+allowlist instead of exposing the entire value:
+
+```json
+{"name":"entries","mask":"json","json_fields":["id","status","createdAt","updatedAt","expiresAt"]}
+```
+
+Place this column policy in the existing `tables[].columns[]` policy request.
+`PUT /policy` replaces the entire database policy, so preserve all other rules.
+The JSON mask preserves empty arrays and projects each array element separately.
+Only explicitly listed top-level scalar values are returned: all other keys are
+omitted, nested objects/arrays under an allowed key are redacted, and unexpected
+scalar input or missing/invalid configuration is fully redacted. Field names
+must be unique identifiers; nested paths and reserved prototype keys are rejected.
+Null stays null. This allows lifecycle metadata to be inspected without returning
+titles, drafts or future unapproved fields.
+
+These columns remain `masked: true`, `filterable: false` and listed in the query
+response's `masked` array. Filtering, sorting, grouping and column aggregates on
+the original JSON remain prohibited. Schema metadata and `GET /policy` include
+`json_fields` for JSON masks. Apply D1 migration `0004` before deploying this API;
+existing masking strategies and their response shapes are unchanged.
 
 ## Allowlist, always
 
